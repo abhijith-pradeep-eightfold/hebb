@@ -2,8 +2,16 @@
 """Look up DNS hostnames for all replicas of a Solr shard from search_config.
 
 This is the deterministic lookup half of the `solr-shard-dns-lookup` skill.
-It imports $CODE_BASE config + search_constants to retrieve the live per-region
-shard-host map — so it needs PYTHONPATH=$CODE_BASE/www (not $CODE_BASE alone).
+It imports $CODE_BASE config + search_index_settings to retrieve the live
+per-region shard-host map for any collection registered in
+SEARCH_INDEX_SETTINGS_REGISTRY — so it needs PYTHONPATH=$CODE_BASE/www
+(not $CODE_BASE alone).
+
+The collection's hosts_key is derived from SEARCH_INDEX_SETTINGS_REGISTRY:
+  settings = SEARCH_INDEX_SETTINGS_REGISTRY[collection]
+  hosts_key = settings.hosts_key
+Default pattern is '{tablename}_shard_hosts'; profiles and positions have
+hard-coded overrides ('shard_hosts' and 'position_shard_hosts' respectively).
 
 The script does NO AWS calls and touches NO external systems: it reads only the
 in-process config. The caller (the skill body) surfaces the follow-up
@@ -13,40 +21,40 @@ Gate-passing invocation shape:
 
     PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" \
         "${CLAUDE_SKILL_DIR}/scripts/get_shard_hosts.py" \
-        --collection positions --shard-id 7
+        --collection user_calendar_events --shard-id 0
 
 Output (one key=value pair per replica, plus a human-readable block):
 
-    collection=positions
-    shard_id=7
+    collection=user_calendar_events
+    shard_id=0
     region=us-west-2
-    available_shards=0,1,2,3,4,5,6,7,38,46,79
+    available_shards=0,38,46,79
     replica_count=2
     replica_0_dns=ec2-xx-xx-xx-xx.us-west-2.compute.amazonaws.com
     replica_1_dns=ec2-yy-yy-yy-yy.us-west-2.compute.amazonaws.com
 
     --- human-readable ---
-    collection : positions
-    shard_id   : 7
+    collection : user_calendar_events
+    shard_id   : 0
     region     : us-west-2
     replica 0  : ec2-xx-xx-xx-xx.us-west-2.compute.amazonaws.com
     replica 1  : ec2-yy-yy-yy-yy.us-west-2.compute.amazonaws.com
 
-If the shard does not exist the script exits 1 with a clear message including
-the list of available shards.
+If the collection is not in the registry the script exits 1 with the list of
+valid registry keys.  If the shard does not exist the script exits 1 with a
+clear message including the list of available shards.
 """
 import argparse
 import os
 import sys
 
-COLLECTION_CHOICES = ("profiles", "positions")
-
 
 def main(argv=None):
     p = argparse.ArgumentParser(
         description="Look up Solr shard replica DNS hostnames from search_config.")
-    p.add_argument("--collection", required=True, choices=COLLECTION_CHOICES,
-                   help="Solr collection: 'profiles' or 'positions'")
+    p.add_argument("--collection", required=True,
+                   help="Solr collection name (any entry in SEARCH_INDEX_SETTINGS_REGISTRY, "
+                        "e.g. 'profiles', 'positions', 'user_calendar_events')")
     p.add_argument("--shard-id", required=True, type=int,
                    help="Integer shard ID (e.g. 7).  Shard IDs are not contiguous.")
     p.add_argument("--region", default=None,
@@ -63,6 +71,7 @@ def main(argv=None):
     try:
         from config import config as cfg_module
         from search import search_constants
+        from search.search_index_settings import SEARCH_INDEX_SETTINGS_REGISTRY
         from utils.os_constants import EF_DEFAULT_REGION  # noqa: F401  (confirms path resolves)
     except ImportError as exc:
         print(
@@ -71,11 +80,17 @@ def main(argv=None):
         )
         return 1
 
-    # Select the right hosts key
-    if args.collection == "positions":
-        hosts_key = search_constants.POSITION_HOSTS   # 'position_shard_hosts'
-    else:
-        hosts_key = search_constants.PROFILE_HOSTS    # 'shard_hosts'
+    # Validate collection against the registry and derive hosts_key
+    if args.collection not in SEARCH_INDEX_SETTINGS_REGISTRY:
+        valid = sorted(SEARCH_INDEX_SETTINGS_REGISTRY.keys())
+        print(
+            f"error: '{args.collection}' is not in SEARCH_INDEX_SETTINGS_REGISTRY.\n"
+            f"  Valid collection names: {', '.join(valid)}",
+            file=sys.stderr,
+        )
+        return 1
+
+    hosts_key = SEARCH_INDEX_SETTINGS_REGISTRY[args.collection].hosts_key
 
     # Load search_config for this region
     try:

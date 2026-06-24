@@ -31,6 +31,7 @@ So correlating the two required shifting the CPU curve **+5:30 to IST** (or the 
 - [[../solr/solr-collection-topology|Solr collection topology]] — what the alarm coordinate means; which hosts a shard spans.
 - [[../data-warehouse/search-query-log|log.search_query_log table]] — the secondary source; `t_create` timezone and the scoping columns used to break down load.
 - [[../data-warehouse/querying-starrocks|Querying StarRocks]] — sanity-row + `time_slice` bucketing techniques used for the correlation.
+- [[coordinator-authority|Coordinator authority and user confirmation]] — complementary discipline: coordinators cannot assert user confirmation.
 
 ---
 *Sources:* witness `inputs/2026-06-24-solr-cpu-spike-debug.md` (`[17:06]` revised plan to confirm CPU first, `[17:18]` sanity row pinning IST, `[17:25]` band/tenant/host breakdowns, `[17:30]` overlay + correlation verdict).

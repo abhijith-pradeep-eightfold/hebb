@@ -30,17 +30,15 @@ There are two ways to arrive at this skill:
    ```
    Read `StateReasonData` for the recent 300s datapoints + the last transition time. Do **not** treat the alarm's last-transition time as "currently healthy" — a hotter host whose alarm was misconfigured may not have paged; read the metric, not just the state.
 
-3. **Get the CPU timeseries** (read-only), one call per `InstanceId`, a few hours either side of the suspected spike. `--period 60` gives one-minute buckets; request both `Average` and `Maximum`; save each to its own JSON file:
+3. **Get the CPU timeseries and analyze it in one shot** (read-only). For each `InstanceId`, redirect the AWS output directly to a scratchpad path and immediately pass that path to the analysis script — do not pause between saving and analyzing:
    ```bash
-   aws cloudwatch get-metric-statistics --region us-west-2 --namespace AWS/EC2 --metric-name CPUUtilization --dimensions Name=InstanceId,Value=<i-...> --start-time 2026-06-15T06:00:00Z --end-time 2026-06-15T12:00:00Z --period 60 --statistics Average Maximum
+   aws cloudwatch get-metric-statistics --region us-west-2 --namespace AWS/EC2 --metric-name CPUUtilization --dimensions Name=InstanceId,Value=<i-...> --start-time 2026-06-15T06:00:00Z --end-time 2026-06-15T12:00:00Z --period 60 --statistics Average Maximum --output json > /tmp/cpu_r0.json && "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/analyze_cpu_metrics.py" --threshold 75 --stat Average --label "replica-0" /tmp/cpu_r0.json
    ```
-   Save each instance's output to its own JSON file (e.g. `... --output json > cpu_r0.json`). The redirect makes the command prompt — that is fine here, because the AWS call is approval-gated anyway (see the approval note below); the gate-clean unattended step is the analysis in step 4, not the AWS pull.
+   The `--period 60` gives one-minute buckets. Repeat for each replica, choosing a distinct scratchpad path per instance. The redirect + `&&` chain counts as one logical operation — the AWS fetch is approval-gated regardless; the analysis runs immediately on success.
 
-4. **Tabulate and flag breaches with the bundled script.** Pass the saved JSON file(s) **by path** (never inline) so the run stays gate-clean and auto-allowed:
-   ```bash
-   "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/analyze_cpu_metrics.py" --threshold 75 --stat Average /path/to/cpu_r0.json /path/to/cpu_r1.json
-   ```
-   It sorts the (unordered) AWS datapoints by timestamp, prints min/max/mean, counts buckets `>= --threshold`, and shows each contiguous high-CPU block tagged `SUSTAINED` (>=5 buckets, i.e. it would clear the alarm's 5-of-6 rule) or `blip`. `--threshold` defaults to 75 (the Solr alarm threshold); `--stat` defaults to `Average` (what the alarm evaluates). Tag each file with `--label` (repeatable, paired with the files in order). No `$CODE_BASE` import is involved — this is a pure transform over the JSON.
+   **If you have multiple replicas**, fetch and analyze each in a single chained command as above rather than fetching all first and analyzing later. The JSON file is a short-lived intermediate; there is no reason to inspect or preserve it between the two commands.
+
+4. **Reading the analysis output.** `analyze_cpu_metrics.py` sorts the (unordered) AWS datapoints by timestamp, prints min/max/mean, counts buckets `>= --threshold`, and shows each contiguous high-CPU block tagged `SUSTAINED` (>=5 buckets, i.e. it would clear the alarm's 5-of-6 rule) or `blip`. `--threshold` defaults to 75 (the Solr alarm threshold); `--stat` defaults to `Average` (what the alarm evaluates). Tag each file with `--label` (repeatable, paired with the files in order). No `$CODE_BASE` import is involved — this is a pure transform over the JSON.
 
 5. **Resolve the timezone before correlating.** CloudWatch is **UTC**. If you go on to correlate against [[../../../wiki/data-warehouse/search-query-log|log.search_query_log]], note its `t_create` is stored in **IST** — shift the CPU window **+5:30** (or the SQL window **−5:30**) so both are on one clock. See [[../../../wiki/process/incident-metric-correlation|incident metric-correlation discipline]] and pair this skill with `query-starrocks` + `plot-result-set` for the overlay.
 
