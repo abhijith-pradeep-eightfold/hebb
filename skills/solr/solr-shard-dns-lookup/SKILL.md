@@ -5,7 +5,7 @@ description: Look up the EC2 DNS hostnames and InstanceIds for all replicas of a
 
 # Solr shard DNS lookup
 
-Retrieve the live EC2 DNS hostnames for every replica of a Solr shard from `search_config` in `$CODE_BASE`, then resolve each hostname to an EC2 InstanceId for downstream use (CloudWatch, SSH, etc.). The lookup facts live in the wiki ([[../../../wiki/solr/solr-shard-dns-lookup|Solr shard DNS lookup via search_config]]); the runtime judgment this skill carries is **which collection, which shard, and which region** to look up. The config read is deterministic and is handled by a **bundled script** — `scripts/get_shard_hosts.py` — that runs unattended. The follow-up DNS→InstanceId AWS calls are read-only but require user approval.
+Retrieve the live EC2 DNS hostnames and InstanceIds for every replica of a Solr shard from `search_config` in `$CODE_BASE`. The lookup facts live in the wiki ([[../../../wiki/solr/solr-shard-dns-lookup|Solr shard DNS lookup via search_config]]); the runtime judgment this skill carries is **which collection, which shard, and which region** to look up. The entire pipeline — config read and DNS→InstanceId resolution — is handled by a **bundled script** — `scripts/get_shard_hosts.py` — that runs unattended with no user approval required.
 
 ## When to use this skill
 
@@ -27,9 +27,9 @@ The bundled script uses `SEARCH_INDEX_SETTINGS_REGISTRY` (in `www/search/search_
 
 Skim [[../../../wiki/solr/solr-shard-dns-lookup|Solr shard DNS lookup via search_config]] to confirm the region and key for this task. The wiki also has the full lookup pattern if you need it for reference.
 
-### 2. Run the bundled config lookup
+### 2. Run the bundled script (DNS hostnames + InstanceIds, no approval needed)
 
-Run the bundled script to get the replica DNS hostnames for the requested shard. This only reads `$CODE_BASE` config — no AWS call, no approval needed:
+Run the bundled script to get the replica DNS hostnames and EC2 InstanceIds for the requested shard. The script reads `$CODE_BASE` config and then resolves each DNS hostname to an InstanceId via `aws ec2 describe-instances` — all bundled, no approval required:
 
 ```bash
 PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/get_shard_hosts.py" --collection <collection-name> --shard-id <N>
@@ -37,41 +37,29 @@ PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/get_sh
 
 - `PYTHONPATH="$CODE_BASE/www"` (not `$CODE_BASE`) — see [[../../../wiki/vscode-repo/python-import-root|Python import root]].
 - Add `--region <region>` if the target is not the default (`EF_DEFAULT_REGION` = `us-west-2`).
+- Add `--no-resolve` to skip the AWS InstanceId resolution and emit only DNS hostnames (e.g. when AWS is unreachable).
 - If the shard doesn't exist, the script exits 1 and prints the available shard IDs — report this to the user and confirm the correct shard before proceeding.
+- If InstanceId resolution fails for a replica (e.g. `AccessDenied`), the script emits `UNKNOWN` for that replica and continues — it does not exit 1 for AWS errors.
 
-The script outputs machine-readable `key=value` lines (one per replica DNS) followed by a human-readable summary.
+The script outputs machine-readable `key=value` lines (one `replica_N_dns` and `replica_N_instance_id` per replica) followed by a human-readable summary.
 
-### 3. Resolve DNS → EC2 InstanceId (user approval required)
+### 3. Report
 
-For each replica DNS hostname from step 2, resolve it to an EC2 InstanceId. Surface each command to the user before running:
-
-```bash
-aws ec2 describe-instances --region us-west-2 \
-  --filters "Name=dns-name,Values=<ec2-xx-xx-xx-xx.us-west-2.compute.amazonaws.com>" \
-  --query "Reservations[*].Instances[*].InstanceId" --output text
-```
-
-Run one command per replica. Collect the `i-...` InstanceId for each.
-
-> **Note:** EC2 `describe-instances` with a DNS filter is a read-only call, but the bash execution policy still gates it because it is not a bundled-script path. Surface the command and run it on user approval.
-
-### 4. Report
-
-Present a table:
+Present a table using the script's output:
 
 | Replica | DNS hostname | InstanceId |
 |---|---|---|
 | 0 | ec2-xx-xx-xx-xx... | i-... |
 | 1 | ec2-yy-yy-yy-yy... | i-... |
 
-Include the collection, shard_id, and region so downstream steps have the full context.
+Include the collection, shard_id, and region so downstream steps have the full context. If any InstanceId is `UNKNOWN`, note the AWS error from stderr and report plainly — do not halt the task.
 
-### 5. (Optional) Proceed to CloudWatch CPU pull
+### 4. (Optional) Proceed to CloudWatch CPU pull
 
-If the goal is to check CPU utilization, hand the InstanceIds to **`inspect-cloudwatch-cpu`** (starting from its Step 0 / "if you start from DNS" path — you already have the InstanceIds, so skip `describe-alarms`). See [[../../../wiki/infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]].
+If the goal is to check CPU utilization, hand the InstanceIds to **`inspect-cloudwatch-cpu`** (starting from its "already have InstanceIds" entry point — skip `describe-alarms`). See [[../../../wiki/infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]].
 
 ## Notes
 
 - **Shard IDs are not contiguous.** Always let the script enumerate available shards rather than assuming sequential IDs.
 - **Do not hardcode hostnames or InstanceIds.** Replica-to-host assignments change when instances are replaced or re-balanced. Always run the lookup fresh.
-- **Reachability check for AWS.** `aws ec2 describe-instances` can only be confirmed by making the call; env inspection alone (profile present, region set) doesn't prove `ec2:DescribeInstances` is authorized. Report plainly if access is denied rather than guessing.
+- **AWS errors are non-fatal.** If `describe-instances` is denied or returns no results, the script emits `UNKNOWN` and continues. Report this to the user but do not stop the task.

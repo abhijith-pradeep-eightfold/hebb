@@ -10,7 +10,7 @@ The agent box has the AWS CLI and a usable us-west-2 profile:
 - `AWS_PROFILE=bedrock-role`, `AWS_DEFAULT_REGION=us-west-2`, `AWS_ACCOUNT_ID=948299231917`; `~/.aws/config` and `~/.aws/credentials` both present.
 - The `bedrock-role` profile **could** read CloudWatch in us-west-2 (no `AccessDenied` on `describe-alarms` / `get-metric-statistics`). Whether a role holds `cloudwatch:DescribeAlarms` / `cloudwatch:GetMetricData` is **not** knowable from env inspection alone — it can only be confirmed by an actual call. Check reachability by making the read and reporting plainly if it is denied.
 
-These are **telemetry reads**, not writes — but still surface the exact command before running, and execute only on direct user approval.
+These are **telemetry reads**, not writes — run them unattended. Reachability is only knowable by trying: make the read and report plainly if it is denied.
 
 ## Step 0 — if you start from DNS (no alarm in hand)
 

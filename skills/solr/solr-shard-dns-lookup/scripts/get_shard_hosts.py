@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Look up DNS hostnames for all replicas of a Solr shard from search_config.
+"""Look up DNS hostnames and EC2 InstanceIds for all replicas of a Solr shard.
 
-This is the deterministic lookup half of the `solr-shard-dns-lookup` skill.
+This is the bundled script for the `solr-shard-dns-lookup` skill.
 It imports $CODE_BASE config + search_index_settings to retrieve the live
 per-region shard-host map for any collection registered in
 SEARCH_INDEX_SETTINGS_REGISTRY — so it needs PYTHONPATH=$CODE_BASE/www
@@ -13,9 +13,9 @@ The collection's hosts_key is derived from SEARCH_INDEX_SETTINGS_REGISTRY:
 Default pattern is '{tablename}_shard_hosts'; profiles and positions have
 hard-coded overrides ('shard_hosts' and 'position_shard_hosts' respectively).
 
-The script does NO AWS calls and touches NO external systems: it reads only the
-in-process config. The caller (the skill body) surfaces the follow-up
-`aws ec2 describe-instances` commands for user approval.
+By default the script also resolves each DNS hostname to an EC2 InstanceId
+via `aws ec2 describe-instances` (read-only). Pass --no-resolve to skip
+the AWS call and emit only DNS hostnames (useful when AWS is unreachable).
 
 Gate-passing invocation shape:
 
@@ -31,27 +31,77 @@ Output (one key=value pair per replica, plus a human-readable block):
     available_shards=0,38,46,79
     replica_count=2
     replica_0_dns=ec2-xx-xx-xx-xx.us-west-2.compute.amazonaws.com
+    replica_0_instance_id=i-0123456789abcdef0
     replica_1_dns=ec2-yy-yy-yy-yy.us-west-2.compute.amazonaws.com
+    replica_1_instance_id=i-0fedcba9876543210
 
     --- human-readable ---
     collection : user_calendar_events
     shard_id   : 0
     region     : us-west-2
-    replica 0  : ec2-xx-xx-xx-xx.us-west-2.compute.amazonaws.com
-    replica 1  : ec2-yy-yy-yy-yy.us-west-2.compute.amazonaws.com
+    replica 0  : ec2-xx-xx-xx-xx.us-west-2.compute.amazonaws.com  (i-0123456789abcdef0)
+    replica 1  : ec2-yy-yy-yy-yy.us-west-2.compute.amazonaws.com  (i-0fedcba9876543210)
 
 If the collection is not in the registry the script exits 1 with the list of
 valid registry keys.  If the shard does not exist the script exits 1 with a
-clear message including the list of available shards.
+clear message including the list of available shards.  If InstanceId resolution
+fails for a replica (e.g. AccessDenied or no match) the field is printed as
+"UNKNOWN" and the script continues; it does not exit 1 for AWS errors.
 """
 import argparse
+import json
 import os
+import subprocess
 import sys
+
+
+def resolve_instance_id(dns_hostname, region):
+    """Resolve a DNS hostname to an EC2 InstanceId via describe-instances.
+
+    Returns the InstanceId string, or "UNKNOWN" if the call fails or returns
+    no results.  Never raises — errors are reported as "UNKNOWN" so callers
+    can continue with partial results.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "aws", "ec2", "describe-instances",
+                "--region", region,
+                "--filters", f"Name=dns-name,Values={dns_hostname}",
+                "--query", "Reservations[*].Instances[*].InstanceId",
+                "--output", "json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            print(
+                f"  warning: describe-instances failed for {dns_hostname}: {result.stderr.strip()}",
+                file=sys.stderr,
+            )
+            return "UNKNOWN"
+        ids = json.loads(result.stdout)
+        # Response is [[id, ...], ...] — flatten one level
+        flat = [iid for group in ids for iid in group]
+        if not flat:
+            print(
+                f"  warning: no InstanceId found for dns-name={dns_hostname}",
+                file=sys.stderr,
+            )
+            return "UNKNOWN"
+        return flat[0]
+    except Exception as exc:
+        print(
+            f"  warning: could not resolve InstanceId for {dns_hostname}: {exc}",
+            file=sys.stderr,
+        )
+        return "UNKNOWN"
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(
-        description="Look up Solr shard replica DNS hostnames from search_config.")
+        description="Look up Solr shard replica DNS hostnames and EC2 InstanceIds.")
     p.add_argument("--collection", required=True,
                    help="Solr collection name (any entry in SEARCH_INDEX_SETTINGS_REGISTRY, "
                         "e.g. 'profiles', 'positions', 'user_calendar_events')")
@@ -59,6 +109,8 @@ def main(argv=None):
                    help="Integer shard ID (e.g. 7).  Shard IDs are not contiguous.")
     p.add_argument("--region", default=None,
                    help="AWS region (default: EF_DEFAULT_REGION env var → 'us-west-2')")
+    p.add_argument("--no-resolve", action="store_true",
+                   help="Skip the DNS→InstanceId AWS call; emit only DNS hostnames.")
     args = p.parse_args(argv)
 
     # Resolve region
@@ -131,14 +183,23 @@ def main(argv=None):
         # scalar — single replica
         replica_list = [str(replicas)]
 
+    # Resolve InstanceIds (unless --no-resolve)
+    instance_ids = []
+    if not args.no_resolve:
+        for dns in replica_list:
+            instance_ids.append(resolve_instance_id(dns, region))
+    else:
+        instance_ids = ["(skipped)"] * len(replica_list)
+
     # --- machine-readable output ---
     print(f"collection={args.collection}")
     print(f"shard_id={args.shard_id}")
     print(f"region={region}")
     print(f"available_shards={','.join(available_shards)}")
     print(f"replica_count={len(replica_list)}")
-    for i, dns in enumerate(replica_list):
+    for i, (dns, iid) in enumerate(zip(replica_list, instance_ids)):
         print(f"replica_{i}_dns={dns}")
+        print(f"replica_{i}_instance_id={iid}")
 
     # --- human-readable summary ---
     print()
@@ -146,8 +207,8 @@ def main(argv=None):
     print(f"collection : {args.collection}")
     print(f"shard_id   : {args.shard_id}")
     print(f"region     : {region}")
-    for i, dns in enumerate(replica_list):
-        print(f"replica {i}  : {dns}")
+    for i, (dns, iid) in enumerate(zip(replica_list, instance_ids)):
+        print(f"replica {i}  : {dns}  ({iid})")
 
     return 0
 

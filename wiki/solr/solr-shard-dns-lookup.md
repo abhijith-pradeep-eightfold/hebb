@@ -34,7 +34,9 @@ Two collections override this default via hard-coded branches:
 | `suggestions` | `suggestions` | `suggestions_hosts` | override, line 32–33 |
 | **all others** | same as collection key | `<tablename>_shard_hosts` | default (line 6) |
 
-So `user_calendar_events` (tablename = `user_calendar_events`, no override) gets `hosts_key = 'user_calendar_events_shard_hosts'` — confirmed present in live `search_config` for us-west-2.
+So `user_calendar_events` (tablename = `user_calendar_events`, no override) gets `hosts_key = 'user_calendar_events_shard_hosts'` — confirmed present in live `search_config` for us-west-2. Similarly, `user_login` (tablename = `user_login`) gets `hosts_key = 'user_login_shard_hosts'`.
+
+> **Collection-name trap:** the registry key is `user_login`, not `user_logins` (no trailing `s`). Passing `user_logins` to the script or the registry raises "not in SEARCH_INDEX_SETTINGS_REGISTRY". Always use the exact registry key — check the list below when in doubt.
 
 ### Registry entries (as of search_index_settings.py lines 36–56)
 
@@ -59,23 +61,30 @@ These are easy to confuse — a task framed as "profiles shard 9" may actually m
 
 ## Shard numbering is not contiguous
 
-Shard IDs are **not sequential** — the positions collection in us-west-2 has shards: `0, 1, 2, 3, 4, 5, 6, 7, 38, 46, 79`. Shard 9 does not exist. Always enumerate `shard_hosts.keys()` to discover the real shard ID list before assuming a shard exists.
+Shard IDs are **not sequential** — examples in us-west-2:
 
-> *Source: `inputs/2026-06-24-profiles-shard9-cpu.md` `[20:31]` — position_shard_hosts keys in us-west-2 confirmed by script.*
+- `positions`: `0, 1, 2, 3, 4, 5, 6, 7, 38, 46, 79` (shard 9 does not exist)
+- `user_login`: `0, 38, 46, 79` (sparse; most integers in between do not exist)
+
+Always enumerate `shard_hosts.keys()` to discover the real shard ID list before assuming a shard exists. The script exits 1 with the available shard list if the requested shard ID is not found.
+
+> *Sources: `inputs/2026-06-24-profiles-shard9-cpu.md` `[20:31]` — position_shard_hosts keys in us-west-2 confirmed by script; `inputs/2026-06-24-user-logins-shard0-cpu.md` `[21:31]` — user_login available shards confirmed by script.*
 
 ## Resolving DNS hostnames to EC2 InstanceIds
 
-Once you have DNS hostnames from `search_config`, resolve each to an EC2 InstanceId for use in CloudWatch metric pulls (see [[../infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]] — Step 2 requires an InstanceId, not a hostname):
+The `solr-shard-dns-lookup` skill's bundled script (`scripts/get_shard_hosts.py`) resolves DNS hostnames to InstanceIds automatically as part of its single run — no separate call needed. It calls `aws ec2 describe-instances` internally per replica:
 
 ```bash
 aws ec2 describe-instances --region us-west-2 \
   --filters "Name=dns-name,Values=<ec2-xx-xx-xx-xx.us-west-2.compute.amazonaws.com>" \
-  --query "Reservations[*].Instances[*].InstanceId" --output text
+  --query "Reservations[*].Instances[*].InstanceId" --output json
 ```
 
 - The filter key is `dns-name`; the value is the full EC2 public DNS hostname exactly as returned by `search_config`.
-- Run one call per replica DNS hostname.
-- The result (`i-...`) is the InstanceId you pass to `aws cloudwatch get-metric-statistics --dimensions Name=InstanceId,Value=<i-...>`.
+- The result (`i-...`) is the InstanceId passed to `aws cloudwatch get-metric-statistics --dimensions Name=InstanceId,Value=<i-...>`.
+- The script emits `UNKNOWN` for any replica where the AWS call fails (e.g. `AccessDenied`, no match) and continues without exiting 1.
+- Pass `--no-resolve` to skip InstanceId resolution and emit only DNS hostnames (e.g. when AWS is unreachable).
+- The script output includes both `replica_N_dns` and `replica_N_instance_id` fields per replica.
 
 This is the **forward direction** (DNS → InstanceId). The reverse direction (InstanceId → DNS) is documented in [[solr-collection-topology|Solr collection topology]].
 
@@ -83,9 +92,8 @@ This is the **forward direction** (DNS → InstanceId). The reverse direction (I
 
 When you know the collection and shard ID and need the CPU curve:
 
-1. Use the lookup pattern above to get replica DNS hostnames from `search_config`.
-2. Use `aws ec2 describe-instances` to resolve each DNS → InstanceId (this section).
-3. Pull CPUUtilization per InstanceId via CloudWatch — [[../infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]] Steps 2–4.
+1. Run `solr-shard-dns-lookup` bundled script — it returns both DNS hostnames and InstanceIds in one unattended run.
+2. Pull CPUUtilization per InstanceId via CloudWatch — [[../infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]] Steps 2–4.
 
 ## Related
 
