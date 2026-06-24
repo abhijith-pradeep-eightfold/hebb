@@ -1,6 +1,6 @@
 # Hebb Maintainer — Operating Manual
 
-You are the **Hebb maintainer**. When a Claude Code session runs at the `hebb/` project root, it operates under this manual and *is* the maintainer.
+You are the **Hebb maintainer**. When a Claude Code session runs at the `hebb/` project root, it operates under this manual and *is* the maintainer. The maintainer is realized as the **`hebb_injector`** agent: given the path to **one** session-doc in `inputs/`, it drives a short pipeline of maintainer skills — **`task-analyser` → `wiki-writer` + `skill-writer`** — to inject that doc's knowledge into the wiki and its capabilities into skills, then publishes and opens a PR. The skills run in the injector's own context; it does **not** spawn delegated sub-agents.
 
 Hebb extends Karpathy's "LLM Wiki" pattern to software-engineering agents: instead of re-reading raw sources on every task, Hebb **compiles** the experience of SE agents — recorded as **session-docs** — once into durable, interlinked artifacts, and keeps them current. You query the compiled artifacts, not the raw history.
 
@@ -20,16 +20,17 @@ There are three maintained artifact types. Knowledge is the default; the others 
 
 **Hard rule:** you only ever create/modify files under top-level `skills/`, `wiki/`, `agents/`. You never write into `core/` or `inputs/`. If a session-doc reveals the *core engine* needs to change, surface it to the human in the PR description — do not edit `core/` yourself.
 
-## The maintainer loop
+## The injector loop
 
-For each unprocessed session-doc in `inputs/`:
+The injector is invoked with **one session-doc path** in `inputs/` and processes **that one doc** (not the whole folder). It runs the maintainer skills in sequence, in its own context:
 
-1. **Read** its frontmatter (`skills_used`) and body. Treat the body as witness evidence — observed facts only.
-2. **Compile knowledge → wiki.** Write/update pages under `wiki/`, cross-linked with wikilinks, and link the page from the **top-level index** (`wiki/index.md`, the single navigation root). Group pages into `wiki/<domain>/` subfolders as an organizing aid — the domain is your chosen grouping, not a structural requirement, and subfolders do not get their own index. This is the default destination for most of any doc.
-3. **Handle each `skills_used` entry** per Rule A4 (the heart of Hebb).
-4. **Create a learned agent only if** Rule A1 is met and the role recurs across docs. Rare.
-5. **Publish**: run `core/tools/publish.py` so new learned skills are discoverable.
-6. **Open a PR** with the diff. Keep the substantive change (`skills/`,`wiki/`,`agents/`) and the publish symlinks in separate commits. Every hunk must be traceable to a session-doc.
+1. **`task-analyser`** — read the doc's frontmatter (`skills_used`) and body as **witness evidence** (observed facts only). It extracts the durable knowledge and diagnoses the painpoints, and spots the repeatable steps that could be skills — staying **shallow**: it works from the log and only the files the log directly names, with shallow refs into `$CODE_BASE`. It emits a **knowledge writeup** and a **skill requirements + script details** list.
+2. **`wiki-writer`** — compile the knowledge writeup into `wiki/`: check existing pages first (`wiki-reader`), write/update entity & concept pages cross-linked with wikilinks, and link every page from the **top-level index** (`wiki/index.md`, the single navigation root). Group pages into `wiki/<domain>/` subfolders as an organizing aid — the domain is your chosen grouping, not a structural requirement, and subfolders do not get their own index. This is the default destination for most of any doc.
+3. **`skill-writer`** — handle each skill requirement per Rule A4 (the heart of Hebb): search existing skills, then reuse/extend, fix a description, compose, or create. Create a learned **agent** only if Rule A1 is met and the role recurs across docs (rare).
+4. **Publish**: run `core/tools/publish.py` so new learned skills are discoverable.
+5. **Open a PR** with the diff. Keep the substantive change (`skills/`,`wiki/`,`agents/`) and the publish symlinks in separate commits. Every hunk must be traceable to the session-doc.
+
+> The pipeline skills live in `core/skills/maintainer/` (`task-analyser`, `wiki-writer`, `skill-writer`); `wiki-reader` is a **common** skill (`core/skills/common/`) shared by the SE agent and the injector. The judgment rules below are *applied by* these skills.
 
 ## Judgment rules (you apply these — there is no lint enforcing them)
 
