@@ -13,6 +13,8 @@ The wiki (`wiki/`) is Hebb's compiled knowledge — "what is true" about the sys
 3. **Synthesize** only what bears on the task at hand.
 
 ## When the wiki falls short
-If `wiki/index.md` is missing, the index doesn't link your topic, or a wikilink is dead, treat it as a **gap** — note the symptom ("no wiki page for X", "index missing X") so `log-appender` records it. Do not invent an answer; fall back to other skills (`task-executer` to inspect `$CODE_BASE`, `external-context-puller` for ticket/thread context) and record what you actually found.
+If `wiki/index.md` is missing, the index doesn't link your topic, or a wikilink is dead, treat it as a **gap** — note the symptom ("no wiki page for X", "index missing X"). Do not invent an answer; fall back to other skills (`task-executer` to inspect `$CODE_BASE`, `external-context-puller` for ticket/thread context) and record what you actually found.
 
-After reading, record via `log-appender` what you consulted and what you learned (or that coverage was missing).
+This is a **common** skill used from both sides:
+- **Witness** (the SE agent): record via `log-appender` what you consulted and what you learned (or that coverage was missing).
+- **Injector** (maintainer side): you read the wiki to check existing coverage before writing — there is no log to append; carry what you found into the writing step (`wiki-writer`).
