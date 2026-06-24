@@ -1,0 +1,9 @@
+{
+  "env": {
+    "CODE_BASE": "/home/ec2-user/vscode",
+    "VSCODE_PYTHON": "/home/ec2-user/py3.13-virt/bin/python"
+  },
+  "permissions": {
+    "additionalDirectories": ["/home/ec2-user/vscode"]
+  }
+}
