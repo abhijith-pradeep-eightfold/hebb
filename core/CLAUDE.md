@@ -25,7 +25,7 @@ There are three maintained artifact types. Knowledge is the default; the others 
 For each unprocessed session-doc in `inputs/`:
 
 1. **Read** its frontmatter (`skills_used`) and body. Treat the body as witness evidence — observed facts only.
-2. **Compile knowledge → wiki.** Write/update pages in `wiki/<domain>/`, cross-linked with wikilinks, and add the page to its domain **index page** (the navigation root). This is the default destination for most of any doc.
+2. **Compile knowledge → wiki.** Write/update pages under `wiki/`, cross-linked with wikilinks, and link the page from the **top-level index** (`wiki/index.md`, the single navigation root). Group pages into `wiki/<domain>/` subfolders as an organizing aid — the domain is your chosen grouping, not a structural requirement, and subfolders do not get their own index. This is the default destination for most of any doc.
 3. **Handle each `skills_used` entry** per Rule A4 (the heart of Hebb).
 4. **Create a learned agent only if** Rule A1 is met and the role recurs across docs. Rare.
 5. **Publish**: run `core/tools/publish.py` so new learned skills are discoverable.
@@ -45,7 +45,7 @@ For each unprocessed session-doc in `inputs/`:
 - **Similar skill picked up but fell short** → *capability* problem. Fix its **script or steps**.
 - **Covered by composition** (A+B together) → compose a thin skill, or an agent if A1 is met.
 
-**A8 — Wiki access.** The wiki is read natively: an agent `Read`s a domain **index page** and follows wikilinks. There is no query tool. So every domain must have an index page, and new pages must be linked from it and from related pages.
+**A8 — Wiki access.** The wiki is read natively: an agent `Read`s the **top-level index** (`wiki/index.md`) and follows wikilinks. There is no query tool. So the wiki has **one** index page, at its root; every new page must be linked from it and from related pages. Domains (`wiki/<domain>/`) are just an organizing grouping you choose for the knowledge — they do **not** each get their own index.
 
 ## Running scripts against `$CODE_BASE` (the vscode repo)
 

@@ -4,10 +4,14 @@
 Source of truth stays separated (core vs learned); runtime discovery is unified
 via relative symlinks:
 
-    core/skills/<name>/SKILL.md   (core, human-authored) ─┐
-    skills/<name>/SKILL.md        (learned, maintainer)   ├─> .claude/skills/<name>
-    core/agents/<name>.md         (core agent defs)       ─┐
-    agents/<name>.md              (learned roles)          ├─> .claude/agents/<name>.md
+    core/skills/[<group>/]<name>/SKILL.md  (core, human-authored) ─┐
+    skills/[<group>/]<name>/SKILL.md        (learned, maintainer)   ├─> .claude/skills/<name>
+    core/agents/<name>.md                   (core agent defs)       ─┐
+    agents/<name>.md                        (learned roles)          ├─> .claude/agents/<name>.md
+
+Skill dirs may be grouped in subfolders (e.g. core/skills/hebb/, common/,
+maintainer/) for source-tree organization; the runtime name is the skill dir's
+basename, so the grouping is invisible to discovery and names stay flat.
 
 Core shadows learned on a name collision (core is authoritative). Idempotent;
 prunes stale symlinks. Run from anywhere; paths are resolved from this file.
@@ -30,13 +34,19 @@ def rel_symlink(target, linkpath):
 
 
 def collect_skills(srcdir):
-    out = {}
-    if os.path.isdir(srcdir):
-        for name in sorted(os.listdir(srcdir)):
-            p = os.path.join(srcdir, name)
-            if os.path.isdir(p) and os.path.isfile(os.path.join(p, "SKILL.md")):
-                out[name] = p
-    return out
+    """Every skill dir (one holding a SKILL.md) under srcdir, at any depth.
+
+    Skills may be grouped in category subfolders; the key is the skill dir's
+    basename. Result is sorted for deterministic publish output.
+    """
+    found = {}
+    for dirpath, dirnames, filenames in os.walk(srcdir):
+        if "SKILL.md" in filenames:
+            found[os.path.basename(dirpath)] = dirpath
+            dirnames[:] = []  # a skill dir is a leaf; don't descend into scripts/ etc.
+        else:
+            dirnames.sort()  # deterministic traversal order
+    return dict(sorted(found.items()))
 
 
 def collect_agents(srcdir):

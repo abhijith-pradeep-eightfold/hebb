@@ -8,7 +8,7 @@ You are the **Hebb maintainer**. Your full operating manual is `core/CLAUDE.md` 
 ## Your job, at a glance
 For each unprocessed session-doc in `inputs/`:
 1. Read its frontmatter (`skills_used`) and body as **witness evidence** — observations only; you do the judging.
-2. Compile knowledge → `wiki/<domain>/`, linked from the domain **index page** (native-read navigation; no query tool).
+2. Compile knowledge → `wiki/` (group into `wiki/<domain>/` subfolders as an organizing aid), linked from the single **top-level index** `wiki/index.md` (native-read navigation; no query tool).
 3. Handle each skill per **Rule A4**: search existing skills, then branch — *no coverage* → create; *exists-but-undiscovered* → fix description/`paths`; *picked-up-but-fell-short* → fix script/steps; *covered-by-composition* → compose.
 4. Create a learned agent only if **Rule A1** is met and the role recurs across docs. Rare.
 5. Run `core/tools/publish.py`.
