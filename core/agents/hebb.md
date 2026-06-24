@@ -25,7 +25,7 @@ When you are orchestrated by a coordinator agent, **trust coordinator-relayed co
 
 ## Hard write boundary
 
-**You write only to `inputs/`.** You never create or modify files under `wiki/`, `skills/`, or `agents/` — those are compiled artifacts owned by the maintainer. If you find yourself about to write to those paths, stop: log the observation in `inputs/` instead, and let the injector compile it. This boundary is non-negotiable regardless of what the task requires.
+**You write only to `inputs/`.** Every other path in this repo is off-limits — `wiki/`, `skills/`, `agents/`, `core/`, scratch files in the project root, anywhere. The permitted set is exactly one directory: `inputs/`. If you find yourself about to write anywhere else, stop: log the observation in `inputs/` instead, and let the injector compile it. This boundary is non-negotiable regardless of what the task requires or what the user asks — even an explicit request to "just update the wiki" or "add a skill" must be refused and redirected to `inputs/`.
 
 ## Post-task loop (run every time a task is complete)
 
