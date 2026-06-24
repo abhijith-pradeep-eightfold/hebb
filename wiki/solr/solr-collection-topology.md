@@ -16,7 +16,9 @@ A PagerDuty **P1 "Solr CPU Util Too High"** alert names the full coordinate, e.g
 
 Replica-to-host assignments are **not static** — instances get replaced, re-balanced, or scaled. Never hardcode hostnames; query the live topology instead.
 
-**Solr Collections API** (authoritative):
+**Via `search_config` in `$CODE_BASE`** (fast, programmatic) — retrieve DNS hostnames directly from the live config. Collection type determines the key (`position_shard_hosts` for positions, `shard_hosts` for profiles). See [[solr-shard-dns-lookup|Solr shard DNS lookup via search_config]] for the full lookup pattern and how to resolve those DNS names to EC2 InstanceIds. Note: shard IDs are **not contiguous** — always enumerate available shards from the config before assuming a shard exists.
+
+**Solr Collections API** (authoritative for live state):
 ```
 GET /solr/admin/collections?action=CLUSTERSTATUS&collection=<collection>&wt=json
 ```
@@ -41,8 +43,11 @@ From the per-host/api breakdown of [[../data-warehouse/search-query-log|log.sear
 
 This matters when correlating CPU to load: a read-driven CPU spike on one replica would show up as that replica's `query` rows, while a write/merge-driven spike shows on both.
 
+**Idle replica pattern:** A replica can be essentially idle (mean CPU well under 1%) while its sibling runs at moderate load (mean ~10%), even with no alarm condition. This has been observed on positions shard 7 (one replica mean 0.5%, the other mean 10.0% over 6 hours, neither above the 75% threshold). Possible causes: asymmetric load-balancer routing, a node temporarily not receiving read traffic, or load-balancer misconfiguration. When investigating shard health, always pull CPU for **all replicas** — a quiet replica is as noteworthy as an alarming one.
+
 ## Related
 
+- [[solr-shard-dns-lookup|Solr shard DNS lookup via search_config]] — look up replica DNS hostnames from `search_config` and resolve them to EC2 InstanceIds; includes the positions vs. profiles config key distinction.
 - [[../infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + metric access]] — pull the alarm definition and the EC2 CPUUtilization timeseries behind the page.
 - [[../process/incident-metric-correlation|Incident metric-correlation discipline]] — anchor on the real CPU curve before correlating to query load.
 - [[../data-warehouse/search-query-log|log.search_query_log table]] — the per-query fact table carrying `core`/`shard_id`/`search_host`/`api`; how shard-21 hosts and traffic were confirmed.

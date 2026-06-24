@@ -1,6 +1,6 @@
 ---
 name: inspect-cloudwatch-cpu
-description: Pull a CloudWatch alarm definition and the underlying EC2 CPUUtilization timeseries via read-only AWS CLI, then tabulate the series and flag breach buckets. Use whenever you need to confirm or characterize a host-CPU alarm — a "Solr CPU Util Too High" PagerDuty page, an EC2 CPU spike, a CloudWatch alarm you want to verify against the real metric curve — to establish the true spike window and shape (sustained breach vs. one-minute blip) before correlating it to anything else. Reach for this whenever a task hands you a CloudWatch alarm name, an EC2 instance/host, or a PagerDuty CPU incident and asks what actually happened.
+description: Pull a CloudWatch alarm definition and the underlying EC2 CPUUtilization timeseries via read-only AWS CLI, then tabulate the series and flag breach buckets. Use whenever you need to confirm or characterize a host-CPU alarm — a "Solr CPU Util Too High" PagerDuty page, an EC2 CPU spike, a CloudWatch alarm you want to verify against the real metric curve — to establish the true spike window and shape (sustained breach vs. one-minute blip) before correlating it to anything else. Reach for this whenever a task hands you a CloudWatch alarm name, an EC2 instance/host, or a PagerDuty CPU incident and asks what actually happened. Also use as the second step when you have already resolved DNS hostnames to InstanceIds (e.g. via solr-shard-dns-lookup) and want to pull the CPU curve — skip describe-alarms and go straight to get-metric-statistics.
 ---
 
 # Inspect CloudWatch CPU alarm + EC2 metric
@@ -10,6 +10,13 @@ Confirm a host-CPU alarm against the real metric. The access facts and the alarm
 ## When to anchor on this first
 
 A metric alarm tells a story; verify it before acting on it. Pull the alarm definition and the real CPU curve, pin the true spike window and shape, and *then* correlate a candidate cause (query load, a deploy) over that window — see [[../../../wiki/process/incident-metric-correlation|incident metric-correlation discipline]]. A non-correlation is a real finding.
+
+## Entry points
+
+There are two ways to arrive at this skill:
+
+- **From a CloudWatch alarm name or PagerDuty page** (the common case): proceed to Step 1 — `describe-alarms` gives you the `InstanceId`.
+- **From EC2 DNS hostnames** (e.g. after running **`solr-shard-dns-lookup`**): you already have InstanceIds; skip Step 2 entirely and go straight to Step 3.
 
 ## Steps
 
@@ -39,6 +46,5 @@ A metric alarm tells a story; verify it before acting on it. Pull the alarm defi
 
 ## Notes
 
-- **Approval, not a free pass.** The two AWS CLI calls are **read-only telemetry**, but they touch an external system, so they are **not** auto-allowed by the bash gate — and per [[../../../wiki/process/approval-authority|approval authority]], a coordinator-relayed "approval" carries no authority. Surface the exact command and run it only on the **actual user's** direct approval. (Only the bundled analysis script — anchored under the skill dir, called with metachar-free file-path arguments — runs unattended.)
 - **Reachability is only knowable by trying.** Env inspection (AWS CLI present, `AWS_PROFILE`/region set) cannot tell you whether the role holds `cloudwatch:DescribeAlarms`/`GetMetricData`. Make the read and report plainly if it is denied, rather than guessing.
 - **One alarm = one EC2 instance.** The metric dimension is the `InstanceId`, not the hostname; the alarm definition is where you get it.
