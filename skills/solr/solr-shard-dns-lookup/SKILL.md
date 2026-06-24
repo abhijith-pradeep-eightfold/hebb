@@ -1,6 +1,6 @@
 ---
 name: solr-shard-dns-lookup
-description: Look up the EC2 DNS hostnames and InstanceIds for all replicas of a Solr shard, given a collection name (profiles or positions) and a shard ID. Use this whenever a task identifies a Solr shard by collection + shard number but does not yet have a hostname or EC2 instance — e.g. "find the host for positions shard 7", "which EC2 instance serves profiles shard 3", "look up shard hosts from search_config", "get EC2 InstanceId for Solr shard N". This is the right first step before a CloudWatch CPU pull (use inspect-cloudwatch-cpu next) or any task that needs to locate the physical host behind a shard. Do NOT use when you already have a CloudWatch alarm name or an InstanceId — go straight to inspect-cloudwatch-cpu in that case.
+description: Look up the EC2 DNS hostnames and InstanceIds for all replicas of a Solr shard, given any collection name in SEARCH_INDEX_SETTINGS_REGISTRY (e.g. profiles, positions, user_calendar_events, user_login, courses, org_units, etc.) and a shard ID. Use this whenever a task identifies a Solr shard by collection + shard number but does not yet have a hostname or EC2 instance — e.g. "find the host for positions shard 7", "which EC2 instance serves user_calendar_events shard 0", "look up shard hosts from search_config", "get EC2 InstanceId for Solr shard N". This is the right first step before a CloudWatch CPU pull (use inspect-cloudwatch-cpu next) or any task that needs to locate the physical host behind a shard. Do NOT use when you already have a CloudWatch alarm name or an InstanceId — go straight to inspect-cloudwatch-cpu in that case.
 ---
 
 # Solr shard DNS lookup
@@ -9,22 +9,17 @@ Retrieve the live EC2 DNS hostnames for every replica of a Solr shard from `sear
 
 ## When to use this skill
 
-- You know the collection (`profiles` or `positions`) and a shard number, but you don't yet have a hostname or EC2 instance.
-- You need to verify which shard IDs actually exist for a collection (shard numbering is not contiguous — `positions` in us-west-2 has shards 0–7, 38, 46, 79; shard 9 does not exist).
+- You know the collection name and a shard number, but you don't yet have a hostname or EC2 instance. The collection can be any entry in `SEARCH_INDEX_SETTINGS_REGISTRY` — `profiles`, `positions`, `user_calendar_events`, `user_login`, `courses`, `org_units`, and others.
+- You need to verify which shard IDs actually exist for a collection (shard numbering is not contiguous — always let the script enumerate the available IDs rather than assuming sequential numbering).
 - You are about to pull CloudWatch CPU for a specific shard but are starting from "collection + shard ID" rather than a PagerDuty alarm.
 
 If you already have a CloudWatch alarm name or an InstanceId, skip this skill and go directly to **`inspect-cloudwatch-cpu`**.
 
-## Key distinction: profiles vs. positions config key
+## How the config key is determined
 
-The two collections use different keys in `search_config` (see [[../../../wiki/solr/solr-shard-dns-lookup|wiki]] and `www/search/search_constants.py`):
+The bundled script uses `SEARCH_INDEX_SETTINGS_REGISTRY` (in `www/search/search_index_settings.py`) to derive the right `hosts_key` for any collection — you do not need to know it in advance. The registry applies the default pattern `{tablename}_shard_hosts`; `profiles` and `positions` are special-cased to `shard_hosts` and `position_shard_hosts` respectively. See [[../../../wiki/solr/solr-shard-dns-lookup|wiki]] for the full derivation table.
 
-| Collection | Key | `search_constants` constant |
-|---|---|---|
-| positions | `position_shard_hosts` | `POSITION_HOSTS` (line 48) |
-| profiles | `shard_hosts` | `PROFILE_HOSTS` (line 54) |
-
-A task framed as "profiles shard 9" may actually mean the `positions` collection. **Confirm the collection before proceeding.**
+**Always confirm the collection name before proceeding.** A task framed as "profiles shard 9" may actually mean the `positions` collection (different shard space), and a collection like `user_calendar_events` has a completely separate shard set.
 
 ## Steps
 
@@ -37,7 +32,7 @@ Skim [[../../../wiki/solr/solr-shard-dns-lookup|Solr shard DNS lookup via search
 Run the bundled script to get the replica DNS hostnames for the requested shard. This only reads `$CODE_BASE` config — no AWS call, no approval needed:
 
 ```bash
-PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/get_shard_hosts.py" --collection <profiles|positions> --shard-id <N>
+PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/get_shard_hosts.py" --collection <collection-name> --shard-id <N>
 ```
 
 - `PYTHONPATH="$CODE_BASE/www"` (not `$CODE_BASE`) — see [[../../../wiki/vscode-repo/python-import-root|Python import root]].

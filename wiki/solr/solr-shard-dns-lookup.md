@@ -2,45 +2,60 @@
 
 **Summary:** How to retrieve the EC2 DNS hostnames for a given Solr shard's replicas from the live `search_config` in `$CODE_BASE`, and how to resolve those hostnames to EC2 InstanceIds for use in CloudWatch. This is the starting point when you know a collection and shard ID but do not yet have a CloudWatch alarm or InstanceId.
 
-## The two shard-host config keys
+## The general mechanism: SearchIndexSettings and SEARCH_INDEX_SETTINGS_REGISTRY
 
-The `search_config` namespace holds **two separate shard-host maps**, one per collection type. The keys are defined in `www/search/search_constants.py`:
+The right way to look up the `search_config` key for any Solr collection is through `SEARCH_INDEX_SETTINGS_REGISTRY` in `www/search/search_index_settings.py`. This registry maps every human-facing collection name to a `SearchIndexSettings` instance, which exposes the correct `hosts_key` for that collection.
 
-| Collection | Config key | `search_constants` constant | Line |
+```python
+from search.search_index_settings import SEARCH_INDEX_SETTINGS_REGISTRY
+from search import search_constants
+from config import config
+
+settings = SEARCH_INDEX_SETTINGS_REGISTRY[collection_name]  # e.g. 'user_calendar_events'
+hosts_key = settings.hosts_key                              # e.g. 'user_calendar_events_shard_hosts'
+search_cfg = config.get(search_constants.SEARCH_CONFIG, region=region)
+shard_hosts = search_cfg[hosts_key]
+```
+
+### How hosts_key is derived
+
+`SearchIndexSettings.__init__` (line 6 of `search_index_settings.py`) sets the default:
+
+```
+self.hosts_key = '{tablename}_shard_hosts'
+```
+
+Two collections override this default via hard-coded branches:
+
+| Collection key | `tablename` | `hosts_key` | Source |
+|---|---|---|---|
+| `profiles` | `candidate_profiles` | `shard_hosts` | override, lines 17–22 |
+| `positions` | `sourcing_profiles` | `position_shard_hosts` | override, lines 23–30 |
+| `suggestions` | `suggestions` | `suggestions_hosts` | override, line 32–33 |
+| **all others** | same as collection key | `<tablename>_shard_hosts` | default (line 6) |
+
+So `user_calendar_events` (tablename = `user_calendar_events`, no override) gets `hosts_key = 'user_calendar_events_shard_hosts'` — confirmed present in live `search_config` for us-west-2.
+
+### Registry entries (as of search_index_settings.py lines 36–56)
+
+`profiles`, `positions`, `user_login`, `courses`, `profile_feedback`, `planned_event`, `suggestions`, `user_calendar_events`, `career_graph`, `config_description`, `offers`, `org_units`, `form_submissions`, `admin_assistant_entities`, `air_document_index`, `question_template`, `agentic_conversations`.
+
+### instant search index
+
+Several collections also have an instant-search index alongside their shard index. The `instant_hosts_key` follows the pattern `instant_{tablename}_hosts`. `user_calendar_events` appears in `INSTANT_SEARCH_CORES` in `www/search/search_constants.py` (lines 38–40) as `instant_user_calendar_events`.
+
+## The two special-case config keys for profiles and positions
+
+For the two most-used collections the `hosts_key` constants are also available directly via `search_constants`:
+
+| Collection | `hosts_key` | `search_constants` constant | Line |
 |---|---|---|---|
 | **Positions** (job postings) | `position_shard_hosts` | `search_constants.POSITION_HOSTS` | 48 |
 | **Profiles** (candidates) | `shard_hosts` | `search_constants.PROFILE_HOSTS` | 54 |
 
 The namespace itself: `search_constants.SEARCH_CONFIG = 'search_config'` (line 78).
 
-These are easy to confuse — a task framed as "profiles shard 9" may actually mean the positions collection (key `position_shard_hosts`), and vice versa. **Always confirm which collection and which config key before looking up shard IDs.**
-
-## Lookup pattern
-
-```python
-import os
-from config import config
-from search import search_constants
-from utils.os_constants import EF_DEFAULT_REGION
-
-region = EF_DEFAULT_REGION  # resolves to 'us-west-2' in the agent environment
-search_cfg = config.get(search_constants.SEARCH_CONFIG, region=region)
-
-# For positions:
-shard_hosts = search_cfg[search_constants.POSITION_HOSTS]  # 'position_shard_hosts'
-# For profiles:
-# shard_hosts = search_cfg[search_constants.PROFILE_HOSTS]  # 'shard_hosts'
-
-# List available shard IDs:
-available_shards = list(shard_hosts.keys())
-
-# Get replica DNS hostnames for a specific shard (shard_id is an int, key is a string):
-replica_dns_list = shard_hosts[str(shard_id)]  # list indexed by replica number
-```
-
-`EF_DEFAULT_REGION` is defined in `www/utils/os_constants.py` line 8 as `os.getenv('EF_DEFAULT_REGION')`, which resolves to `us-west-2` in the agent environment.
-
-Scripts that import `www` packages need `PYTHONPATH=$CODE_BASE/www` (not `$CODE_BASE`) — see [[../vscode-repo/python-import-root|Python import root]].
+These are easy to confuse — a task framed as "profiles shard 9" may actually mean the positions collection. **Always confirm which collection before looking up shard IDs.**
 
 ## Shard numbering is not contiguous
 
@@ -79,4 +94,4 @@ When you know the collection and shard ID and need the CPU curve:
 - [[../vscode-repo/python-import-root|Python import root ($CODE_BASE/www)]] — PYTHONPATH convention for scripts that import `www` packages.
 
 ---
-*Sources:* witness `inputs/2026-06-24-profiles-shard9-cpu.md` (`[20:31]` config lookup script, available shard keys, DNS→InstanceId via describe-instances); confirmed against `www/search/search_constants.py` lines 48, 54, 78 and `www/utils/os_constants.py` line 8.
+*Sources:* witness `inputs/2026-06-24-profiles-shard9-cpu.md` (`[20:31]` config lookup script, available shard keys, DNS→InstanceId via describe-instances); witness `inputs/2026-06-24-solr-shard0-cpu.md` (`[21:03]` user_calendar_events registry lookup, hosts_key derivation, confirmed key in live search_config); confirmed against `www/search/search_index_settings.py` lines 3–56, `www/search/search_constants.py` lines 38–40, 48, 54, 78 and `www/utils/os_constants.py` line 8.
