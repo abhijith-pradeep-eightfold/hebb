@@ -37,8 +37,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/core/tools/gate_python_exec.py\"",
-            "statusMessage": "Checking python execution policy"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/core/tools/bash_exec_policy.py\"",
+            "statusMessage": "Checking bash execution policy"
           }
         ]
       }
