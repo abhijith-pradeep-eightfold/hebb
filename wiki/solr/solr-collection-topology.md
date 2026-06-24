@@ -8,20 +8,29 @@ A PagerDuty **P1 "Solr CPU Util Too High"** alert names the full coordinate, e.g
 
 > `[us-west-2] P1 Solr CPU Util Too High on profiles shard 21 replica 0 (ec2-54-188-57-60.us-west-2.compute.amazonaws.com)`
 
-- It is posted automatically; service is **Core Infra** (`P7I5DOG`).
+- It is posted automatically; service is **Core Infra**.
 - It is triggered by a **CloudWatch alarm of the same name** — see [[../infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + metric access]] for the alarm definition and how to pull the underlying CPU curve.
 - The coordinate is `collection / shard_id / replica` plus the EC2 **host**; the alarm's CloudWatch dimension is the host's `InstanceId` (the alarm definition carries the `InstanceId`).
 
-## `profiles` shard 21 lives on exactly two hosts
+## How to look up the hosts for a shard
 
-For the `profiles` collection, shard 21 is served by **two replicas on two hosts**. Confirmed two independent ways in the 2026-06-15 incident — by the two sibling CloudWatch alarms, and by the `search_host` breakdown in [[../data-warehouse/search-query-log|log.search_query_log]]:
+Replica-to-host assignments are **not static** — instances get replaced, re-balanced, or scaled. Never hardcode hostnames; query the live topology instead.
 
-| Replica | Host | InstanceId | Observed CPU profile (2026-06-15, 6h band) |
-|---|---|---|---|
-| replica 0 | `ec2-54-188-57-60` | `i-0d22f39bd3dd3171a` | cool/spiky — Average mean ~31%, occasional ~99% spikes (the host that paged) |
-| replica 1 | `ec2-34-217-117-48` | `i-08580e991383820e1` | broadly hot — Average mean ~55%, frequently near-saturated |
+**Solr Collections API** (authoritative):
+```
+GET /solr/admin/collections?action=CLUSTERSTATUS&collection=<collection>&wt=json
+```
+Returns the full shard tree: shard → replica → core URL, which contains the hostname. The replica `state` field confirms whether it is `active`. This tells you every host serving a given shard right now.
 
-Notable: the **hotter** replica (replica 1) did **not** page on 2026-06-15. Its CloudWatch alarm last transitioned 2025-09-15 and was only (re)configured **2026-06-23**, after this incident — so high sustained CPU on a host does not imply it was alarming at the time. Always confirm the alarm state separately from the metric.
+**Cross-checking via CloudWatch** — if a PagerDuty alarm has already fired, the alarm definition (from `aws cloudwatch describe-alarms --alarm-names "<name>"`) carries the `InstanceId` dimension. Resolve the hostname from the instance ID:
+```
+aws ec2 describe-instances --instance-ids <InstanceId> \
+  --query "Reservations[*].Instances[*].PublicDnsName" --output text
+```
+
+**Via `search_host` in `log.search_query_log`** — grouping by `search_host` WHERE `core` and `shard_id` match gives you the hosts that actually served traffic in a window; cross-reference against the Solr API to confirm whether any replica is silent (down or not receiving reads). See [[../data-warehouse/search-query-log|log.search_query_log]].
+
+**Pattern to watch:** The replica with the highest CPU is not necessarily the one whose CloudWatch alarm fired — an alarm threshold may be misconfigured or stale for a given replica. Always verify the alarm state for each replica independently via `describe-alarms`; do not assume high CPU implies active alarming.
 
 ## Solr replica traffic semantics
 

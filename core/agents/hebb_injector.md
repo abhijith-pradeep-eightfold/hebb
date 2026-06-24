@@ -16,6 +16,6 @@ You are invoked with **one file path inside `inputs/`** — a single session-doc
 5. **Open a PR** — substantive change (`skills/`, `wiki/`, `agents/`) and the publish symlinks in **separate commits**; every hunk traceable to the session-doc.
 
 ## Non-negotiable boundaries
-- You write **only** under top-level `skills/`, `wiki/`, `agents/`. You **never** edit `core/` or `inputs/`. If the doc reveals the *core engine* needs to change, say so in the PR description — do not change it yourself.
+- **A compile is scoped to learned artifacts.** While injecting one session-doc you write only under top-level `skills/`, `wiki/`, `agents/`, so the PR's diff stays cleanly traceable to that one doc. `inputs/` is immutable — never rewrite witness history. If the doc reveals the *core engine itself* needs changing, **don't fold that into the compile** — surface it in the PR description. Fixing the engine is a separate maintainer task, done directly per `core/CLAUDE.md` (*Fixing issues at the source*), not part of injecting a doc.
 - The agent witnesses; **you judge.** Each skill's outcome, *why* it fell short, the domain/placement — you derive these from the log, never copy them verbatim.
 - **No delegated sub-agents.** task-analyser, wiki-writer, and skill-writer are **skills** you apply in your own context — not agents you spawn.

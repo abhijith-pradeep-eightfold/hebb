@@ -21,5 +21,7 @@ You are the injector's **knowledge stage**. Take the knowledge writeup from `tas
 7. **Self-lint the pass** before finishing (Karpathy's lint set): no orphan pages, no dangling wikilinks, no contradictions left standing, no missing cross-references, no important concept mentioned-but-unlinked.
 
 ## Boundaries
-- Write **only** under `wiki/`. Skills are `skill-writer`'s job; never write `skills/` or `core/`.
+- A compile writes **only** under `wiki/`. Skills are `skill-writer`'s job; don't write `skills/` here. Engine fixes (`core/`) are a separate maintainer task (`core/CLAUDE.md`), not part of compiling knowledge into the wiki.
 - Facts only — observations compiled into durable knowledge. Don't record "this should be a skill / page / agent"; that judgment already happened upstream.
+- **No opaque environment identifiers.** Do not include internal service codes (e.g. PagerDuty service IDs), cloud resource IDs (EC2 instance IDs, ARNs), or any other identifier that is opaque, environment-specific, and carries no conceptual meaning. Name entities by their human-readable name only. These values are not stable and silently become wrong when infrastructure is reorganized.
+- **No incident-specific topology snapshots.** Do not encode which specific host, instance, or resource served which shard/replica at the time of an incident — these are ephemeral assignments that change when infrastructure is scaled or replaced. Instead, document *how to look up* the current topology (e.g. the Solr Collections API, CloudWatch alarm dimensions, DNS resolution commands). The wiki teaches the method, not the snapshot.
