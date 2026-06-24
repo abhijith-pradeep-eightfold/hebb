@@ -55,6 +55,8 @@ WHERE t_create >= DATE_SUB(NOW(), INTERVAL 6 HOUR)
 
 To count or filter "queries in time window X", filter on **`t_create`** — it is the time the query happened. **`analytics_loaded_at`** is when the row was loaded into the warehouse by ETL; using it for a query-time window gives wrong answers. There is typically a small ingest lag between the two (observed `max(t_create)` ~2 minutes behind warehouse `NOW()`).
 
+**`t_create` is stored in IST (local time), not UTC.** Confirmed by a warehouse-`NOW()` sanity row that read `2026-06-24 17:17`, matching IST wall-clock at the time (it was ~17:18 IST), **not** UTC (~11:48). This is load-bearing when correlating against a UTC source: e.g. an [[../infra/cloudwatch-cpu-alarm|EC2 CPUUtilization]] spike at 08:20–08:35 UTC must be matched against `t_create` literals **13:50–14:05 IST** (shift +5:30). See [[../process/incident-metric-correlation|incident metric-correlation discipline]] for the cross-source timezone trap.
+
 ### Physical layout
 
 - `PARTITION BY date_trunc('day', t_create)`
@@ -62,6 +64,10 @@ To count or filter "queries in time window X", filter on **`t_create`** — it i
 - `ORDER BY (group_id, api, env)`
 - `partition_live_number = 31` — roughly 31 days of partitions retained.
 - `compression = LZ4`, `datacache.enable = true`, `replication_num = 1`.
+
+### Used as an incident-correlation source
+
+Because each row carries `core`, `shard_id`, `search_host`, `api`, `latency_milliseconds`, and `rows_requested`/`rows_returned`, the table is the natural secondary source for testing whether **query load** drove a Solr host metric (e.g. a CPU alarm). Break the incident window down by `group_id` (which tenant), `shard_id`/`search_host` (which shard/replica host), `api` (`query` reads vs. `update/json/docs` indexing writes — see [[../solr/solr-collection-topology|Solr topology]]), and `rows_requested` (large-fanout reads). In the 2026-06-15 `profiles` shard-21 incident this breakdown showed query load did **not** correlate with the CPU spike — see [[../process/incident-metric-correlation|incident metric-correlation discipline]].
 
 ## Defined across three warehouses
 

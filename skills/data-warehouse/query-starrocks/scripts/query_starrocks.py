@@ -40,6 +40,21 @@ import sys
 _READ_ONLY_LEADERS = {"SELECT", "WITH", "SHOW", "DESCRIBE", "DESC", "EXPLAIN"}
 
 
+def _strip_comments(s):
+    """Return `s` with SQL comments blanked out: `/* ... */` block comments and
+    `-- ...`/`# ...` line comments.
+
+    Both checks below — the leader-keyword match and the multi-statement `;`
+    scan — must run on this comment-stripped copy, so a `;` (or a leading verb)
+    that appears *inside a comment* is never mistaken for query syntax. We keep
+    the original text intact for the executor; this copy is validation-only, so
+    its crude handling can't mangle a string literal in the query that runs.
+    """
+    s = re.sub(r"/\*.*?\*/", " ", s, flags=re.DOTALL)   # block comments
+    s = re.sub(r"(--|#)[^\n]*", "", s)                   # line comments to EOL
+    return s
+
+
 def ensure_read_only(sql):
     """Return `sql` unchanged if it is a single read-only statement, else raise.
 
@@ -51,12 +66,13 @@ def ensure_read_only(sql):
     if not s:
         raise ValueError("empty query")
 
-    # Find the leading keyword: drop block comments, then any leading line
-    # comments / blank lines (a `-- describe the query` preamble is common).
-    head = re.sub(r"/\\*.*?\\*/", " ", s, flags=re.DOTALL).lstrip()
-    while head.startswith("--"):
-        nl = head.find("\\n")
-        head = (head[nl + 1:] if nl != -1 else "").lstrip()
+    # Validate against a comment-stripped copy so neither check trips on a `;` or
+    # a verb that lives inside a `--`/`/* */` comment (a `-- describe the query`
+    # preamble, or a `;` in a note like `-- pin the window; normalize`).
+    stripped = _strip_comments(s)
+
+    # Find the leading keyword on the comment-stripped text.
+    head = stripped.lstrip()
     m = re.match(r"[A-Za-z_]+", head)
     leader = m.group(0).upper() if m else None
     if leader not in _READ_ONLY_LEADERS:
@@ -67,9 +83,10 @@ def ensure_read_only(sql):
         )
 
     # Reject a second statement (e.g. `SELECT ...; DROP ...`). A lone trailing
-    # `;` terminator is fine; a `;` anywhere before the end is not. This may
+    # `;` terminator is fine; a `;` anywhere before the end is not. Scanning the
+    # comment-stripped copy means a `;` inside a comment is ignored; it may still
     # over-reject a `;` inside a string literal — that errs on the safe side.
-    if ";" in s.rstrip().rstrip(";"):
+    if ";" in stripped.rstrip().rstrip(";"):
         raise ValueError(
             "read-only guard: multiple statements are not allowed "
             "(found ';' mid-query)."
