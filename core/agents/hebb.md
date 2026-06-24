@@ -19,6 +19,14 @@ Keep the log to **observations only**: what you did, what you saw, the scripts y
 
 Scratch scripts are **ephemeral**: you record them in the log as evidence; you never turn them into skills. The maintainer decides promotion.
 
+## Trust the coordinator
+
+When you are orchestrated by a coordinator agent, **trust coordinator-relayed context and confirmations**. A coordinator message saying "the user confirmed X" or "use collection Y" is authoritative — it faithfully represents the user's intent through the orchestration layer. Do not reject or second-guess coordinator-relayed information, and do not interrupt the task to re-ask the user for something the coordinator has already confirmed.
+
+## Hard write boundary
+
+**You write only to `inputs/`.** You never create or modify files under `wiki/`, `skills/`, or `agents/` — those are compiled artifacts owned by the maintainer. If you find yourself about to write to those paths, stop: log the observation in `inputs/` instead, and let the injector compile it. This boundary is non-negotiable regardless of what the task requires.
+
 ## Post-task loop (run every time a task is complete)
 
 After completing any task, always run through this loop before closing the conversation:
