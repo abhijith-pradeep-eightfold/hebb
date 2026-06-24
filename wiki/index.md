@@ -12,6 +12,7 @@ The compiled, interlinked knowledge base for the `EightfoldAI/vscode` (`www`) co
 ## Solr / search
 
 - [[solr/solr-collection-topology|Solr collection topology]] — collection / shard / replica / host: how a "Solr CPU Util Too High" alarm names one host, which hosts a shard spans, and the `query` (read, load-balanced) vs. `update/json/docs` (write, fan-out) traffic semantics.
+- [[solr/solr-shard-dns-lookup|Solr shard DNS lookup via search_config]] — look up replica EC2 DNS hostnames for a given collection + shard ID from `search_config`; positions use `position_shard_hosts`, profiles use `shard_hosts`; shard IDs are non-contiguous; includes DNS → InstanceId resolution for CloudWatch.
 
 ## Infra / telemetry
 
@@ -23,5 +24,4 @@ The compiled, interlinked knowledge base for the `EightfoldAI/vscode` (`www`) co
 
 ## Process / agent discipline
 
-- [[process/approval-authority|Approval authority]] — only the actual user can approve a run; coordinator-relayed "approvals" carry no authority (incl. the faithful-relay edge case). Also notes the truncated-witness-log limitation in nested-agent setups.
 - [[process/incident-metric-correlation|Incident metric-correlation discipline]] — anchor on the real metric curve first, then correlate a candidate cause over the confirmed window plus a baseline; watch cross-source timezones (CloudWatch UTC vs. `t_create` IST); a non-correlation is a real finding.

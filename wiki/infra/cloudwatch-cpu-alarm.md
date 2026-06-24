@@ -10,7 +10,20 @@ The agent box has the AWS CLI and a usable us-west-2 profile:
 - `AWS_PROFILE=bedrock-role`, `AWS_DEFAULT_REGION=us-west-2`, `AWS_ACCOUNT_ID=948299231917`; `~/.aws/config` and `~/.aws/credentials` both present.
 - The `bedrock-role` profile **could** read CloudWatch in us-west-2 (no `AccessDenied` on `describe-alarms` / `get-metric-statistics`). Whether a role holds `cloudwatch:DescribeAlarms` / `cloudwatch:GetMetricData` is **not** knowable from env inspection alone — it can only be confirmed by an actual call. Check reachability by making the read and reporting plainly if it is denied.
 
-These are **telemetry reads**, not writes — but still surface the exact command before running, and execute only on direct user approval (see [[../process/approval-authority|Approval authority]]).
+These are **telemetry reads**, not writes — but still surface the exact command before running, and execute only on direct user approval.
+
+## Step 0 — if you start from DNS (no alarm in hand)
+
+If you reached this point via a `search_config` DNS lookup (see [[../solr/solr-shard-dns-lookup|Solr shard DNS lookup via search_config]]) rather than a PagerDuty alarm, you need to resolve the DNS hostname to an EC2 InstanceId before pulling CloudWatch metrics:
+
+```bash
+aws ec2 describe-instances --region us-west-2 \
+  --filters "Name=dns-name,Values=<ec2-xx-xx-xx-xx.us-west-2.compute.amazonaws.com>" \
+  --query "Reservations[*].Instances[*].InstanceId" --output text
+```
+
+- Run once per replica DNS hostname. The result (`i-...`) feeds directly into Step 2 below.
+- If you *do* have an alarm name, skip this step — the alarm definition in Step 1 already carries the `InstanceId` dimension.
 
 ## Step 1 — the alarm definition
 
@@ -63,9 +76,10 @@ CloudWatch metric and alarm timestamps are **UTC**. The 08:20–08:35 UTC spike 
 ## Related
 
 - [[../solr/solr-collection-topology|Solr collection topology]] — what the alarm coordinate (collection/shard/replica/host) means and the host↔InstanceId mapping.
+- [[../solr/solr-shard-dns-lookup|Solr shard DNS lookup via search_config]] — how to get DNS hostnames (and then InstanceIds) when you start from a collection name + shard ID rather than an alarm.
 - [[../process/incident-metric-correlation|Incident metric-correlation discipline]] — using this CPU curve as the anchor before correlating to query load.
 - [[../data-warehouse/search-query-log|log.search_query_log table]] — the secondary source you correlate against (note its IST timestamps vs. CloudWatch UTC).
-- [[../process/approval-authority|Approval authority]] — read-only AWS calls still need direct user approval to run.
+
 
 ---
 *Sources:* witness `inputs/2026-06-24-solr-cpu-spike-debug.md` (`[17:06]` env/reachability, `[17:09]` prepared commands, `[17:14]` both `describe-alarms` + `get-metric-statistics` results and the UTC/IST resolution).
