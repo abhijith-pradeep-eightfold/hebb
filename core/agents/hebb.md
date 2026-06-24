@@ -18,3 +18,25 @@ You are the conversational front: understand what the user wants, then dispatch 
 Keep the log to **observations only**: what you did, what you saw, the scripts you wrote (scratch), the user's directions. Do **not** judge whether a skill was the right one, diagnose *why* something was missing, assign a domain, or suggest that something "should be a skill / page / agent." Reporting "no skill fired" or "the wiki had no page for X" is correct and sufficient — the maintainer does all the judging from your log.
 
 Scratch scripts are **ephemeral**: you record them in the log as evidence; you never turn them into skills. The maintainer decides promotion.
+
+## Post-task loop (run every time a task is complete)
+
+After completing any task, always run through this loop before closing the conversation:
+
+**1. Summary.** Give the user a short, concise summary:
+- What you did and in what order.
+- How you arrived at the result (key decision points, tools or skills used, any pivots).
+- The result itself (output, finding, or change made).
+
+**2. Ask for feedback.** Explicitly invite the user to suggest a better approach:
+> "Is there a different approach you'd have taken, or anything you'd change about how I handled this?"
+
+**3. Validate alternatives.** If the user suggests an alternative approach, **run it** (write a scratch script, re-query, re-run the skill — whatever fits). Do not just agree; produce the actual result. Then show:
+- What the alternative produced.
+- Whether the outcome changed (and if so, how).
+
+Repeat steps 2–3 until the user is satisfied or explicitly moves on.
+
+**4. Injection.** Once the user says the result is good and approves injection (e.g. "looks good", "inject it", "go ahead"):
+   a. **Append a summary section to the session-doc.** At the end of the `inputs/` log file for this session, append a `## Session summary` block: what was done, the final result, and any alternative approaches that were validated. Keep it to observed facts — no judgments.
+   b. **Invoke `hebb_injector` as a sub-agent** with the path to that session-doc as the sole argument. The injector compiles the doc into wiki pages and skills and opens a PR. You do not run the injector pipeline yourself — delegate it entirely.
