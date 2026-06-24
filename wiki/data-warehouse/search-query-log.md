@@ -32,6 +32,25 @@ DDL: `www/datawarehouse/starrocks/sql/fact_tables/search_query_log.sql` — `CRE
 | `env` | varchar(200) | |
 | `analytics_loaded_at` | datetime DEFAULT CURRENT_TIMESTAMP | **ETL load time — NOT query time** |
 
+### This *is* the Solr query log (no separate table)
+
+There is **no separate "Solr query-log" table** — this one carries the Solr-specific columns directly: `core` (the Solr core), `shard_id`, `search_host`, and `is_instant`. So counting "Solr queries" is a filtered read of `log.search_query_log`, not a hit against a Solr admin/metrics endpoint.
+
+### Scoping filters
+
+To scope a count to a specific customer and core, filter — alongside the `t_create` window — on:
+
+- **`group_id`** — the customer/tenant id (also the distribution HASH key), e.g. `group_id = 'volkscience.com'`.
+- **`core`** — the Solr core, e.g. `core = 'profiles'`.
+
+Both are plain `WHERE` columns. Example windowed + scoped predicate:
+
+```sql
+WHERE t_create >= DATE_SUB(NOW(), INTERVAL 6 HOUR)
+  AND group_id = 'volkscience.com'
+  AND core = 'profiles'
+```
+
 ### Timestamp semantics (gotcha)
 
 To count or filter "queries in time window X", filter on **`t_create`** — it is the time the query happened. **`analytics_loaded_at`** is when the row was loaded into the warehouse by ETL; using it for a query-time window gives wrong answers. There is typically a small ingest lag between the two (observed `max(t_create)` ~2 minutes behind warehouse `NOW()`).
@@ -60,8 +79,8 @@ On 2026-06-24 at 13:38 (us-west-2 StarRocks), `COUNT(*)` over `t_create >= DATE_
 ## Related
 
 - [[starrocks|StarRocks data warehouse]] — the warehouse hosting this table.
-- [[querying-starrocks|Querying StarRocks]] — how to read it (`starrocks_utils.get_list`), with a worked count-over-window technique.
+- [[querying-starrocks|Querying StarRocks]] — how to read it (`starrocks_utils.get_list`), with worked count-over-window and N-minute-bucketing techniques.
 - [[datawarehouse-adapter-factory|DataWarehouseAdapterFactory]] — warehouse routing.
 
 ---
-*Sources:* `www/datawarehouse/starrocks/sql/fact_tables/search_query_log.sql`, `www/datawarehouse/sql/redshift_log_tables/search_query_log.sql`, `www/datawarehouse/databricks/analytics_project/src/sql/fact_tables/search_query_log.sql`. Witness: `inputs/2026-06-24-starrocks-query-count.md`.
+*Sources:* `www/datawarehouse/starrocks/sql/fact_tables/search_query_log.sql`, `www/datawarehouse/sql/redshift_log_tables/search_query_log.sql`, `www/datawarehouse/databricks/analytics_project/src/sql/fact_tables/search_query_log.sql`. Witnesses: `inputs/2026-06-24-starrocks-query-count.md`, `inputs/2026-06-24-solr-query-buckets.md`.

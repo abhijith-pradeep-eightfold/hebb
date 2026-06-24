@@ -21,9 +21,13 @@ PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" your_script.py
 
 The two env vars are `CODE_BASE` (repo root, `/home/ec2-user/vscode`) and `VSCODE_PYTHON` (the interpreter whose venv holds the deps). The general guidance says "run with the repo root on `PYTHONPATH`" — but for these `www`-rooted packages the correct root is `$CODE_BASE/www`. Use `$CODE_BASE/www` whenever the script imports `datawarehouse`, `db`, or other `www`-level packages.
 
+## Installed in the venv
+
+The `$VSCODE_PYTHON` venv also carries common third-party libraries beyond the repo's own packages. Observed available: **`matplotlib` 3.10.0** (with `matplotlib.dates`) — usable for headless plotting via the Agg backend (`matplotlib.use("Agg")`) to render query results to a PNG without a display. See [[../data-warehouse/querying-starrocks#plotting-the-result-to-a-png|Querying StarRocks → plotting]].
+
 ## Related
 
 - [[../data-warehouse/querying-starrocks|Querying StarRocks]] — a concrete script that imports `datawarehouse.starrocks` and `db.db_type` and therefore needs `$CODE_BASE/www`.
 
 ---
-*Sources:* observed at runtime in `inputs/2026-06-24-starrocks-query-count.md`; package layout under `www/` in the `vscode` repo.
+*Sources:* observed at runtime in `inputs/2026-06-24-starrocks-query-count.md`; package layout under `www/` in the `vscode` repo. matplotlib-in-venv observed in `inputs/2026-06-24-solr-query-buckets.md`.

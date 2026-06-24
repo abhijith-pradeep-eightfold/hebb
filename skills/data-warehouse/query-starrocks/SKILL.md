@@ -18,6 +18,7 @@ A thin composition skill: it tells you *which* compiled knowledge and *which* ex
    - Filter time windows on the **event-time** column (e.g. `t_create`), never on `analytics_loaded_at`.
    - MySQL-style datetime functions work: `WHERE t_create >= DATE_SUB(NOW(), INTERVAL 30 MINUTE)`.
    - For a count/aggregate over a window, add a **sanity row** first — warehouse `NOW()`, `MIN/MAX` of the event-time column, and `COUNT(*)` over the window — to confirm the window resolved against live data and to reveal ingest lag.
+   - To bucket counts into fixed N-minute windows, use StarRocks `time_slice(<event_time>, INTERVAL N MINUTE) AS bucket_start` and group/order by the bucket — see the "counts in N-minute buckets" worked technique in [[../../../wiki/data-warehouse/querying-starrocks|Querying StarRocks]]. Scope with plain `WHERE` columns (e.g. `group_id`, `core` on `log.search_query_log`).
    - Use `cache_ttl_secs=None` in `get_list` for a fresh/live read (the default is 600s).
 
 3. **Run it via `task-executer`.** Write the read-only script that calls `starrocks_utils.get_list`, get explicit user approval (task-executer's hard rule), and run it in the vscode venv. **Critical:** these packages are `www`-rooted, so use `PYTHONPATH="$CODE_BASE/www"` — see [[../../../wiki/vscode-repo/python-import-root|Python import root]]. (`PYTHONPATH="$CODE_BASE"` fails with `ModuleNotFoundError: No module named 'datawarehouse'`.)
@@ -34,5 +35,6 @@ A thin composition skill: it tells you *which* compiled knowledge and *which* ex
 
 ## Notes
 
+- **Plotting the result.** If the task wants a chart (e.g. bucketed counts over time), `matplotlib` 3.10.0 is in `$VSCODE_PYTHON`; use the Agg backend to render a PNG headlessly in the same read-only script. The recipe is in [[../../../wiki/data-warehouse/querying-starrocks|Querying StarRocks → plotting]] — no separate skill needed (the plotting is generic matplotlib, not a StarRocks-specific capability).
 - **Read-only by default.** `get_list` uses `op_type='read'` (`STARROCKS-CLUSTER-RO`). Writes go through `execute_query` (`op_type='write'`, `STARROCKS-CLUSTER-RW`) — only when the task explicitly calls for it.
 - Which warehouse a query hits (StarRocks vs. Redshift vs. Databricks) is normally chosen by [[../../../wiki/data-warehouse/datawarehouse-adapter-factory|DataWarehouseAdapterFactory]]; this skill uses the direct `starrocks_utils` path to target StarRocks specifically.
