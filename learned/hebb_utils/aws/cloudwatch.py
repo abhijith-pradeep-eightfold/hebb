@@ -1,15 +1,15 @@
 """Fetch and analyze EC2 `CPUUtilization` from CloudWatch.
 
-Deterministic, **www-free** shared logic (Rule A2) used by more than one skill:
+Deterministic shared logic (Rule A2) used by more than one skill:
   - `inspect-cloudwatch-cpu` (its `analyze_cpu_metrics.py` imports the analysis half);
   - `solr-shard-cpu` (its `shard_cpu.py` imports both the fetch and the analysis halves).
 
-This module imports nothing from `$CODE_BASE` / `www`, so a skill that imports it
-must NOT also put `$CODE_BASE/www` on its path: vscode ships its own top-level
-`utils` package (`www/utils`), which would shadow this `learned/utils` package and
-break the import. Keep importers of `learned/utils` www-free (run with
-`PYTHONPATH="$CODE_BASE"`, not `$CODE_BASE/www`); reach any www-coupled stage via a
-subprocess instead. See learned/utils/README.md.
+This module is itself www-free (it imports nothing from `$CODE_BASE`), but it lives
+in the `hebb_utils` shared library alongside vscode-dependent modules. The library's
+import root is `hebb_utils` (never `utils`) so it can be imported in the same process
+as vscode code — vscode ships its own top-level `utils` package (`www/utils`), and
+two top-level `utils` packages cannot coexist on one `sys.path`. See
+learned/hebb_utils/README.md.
 
 Two halves:
   - `fetch_cpu(...)`  — a read-only `aws cloudwatch get-metric-statistics` call,

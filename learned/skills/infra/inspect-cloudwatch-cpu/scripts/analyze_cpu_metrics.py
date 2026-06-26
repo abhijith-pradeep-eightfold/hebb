@@ -10,9 +10,9 @@ import). It is bundled under the skill dir so the bash execution policy
 (`core/tools/bash_exec_policy.py`) auto-allows a clean `python .../scripts/...`
 invocation without a prompt.
 
-The analysis logic itself lives in the shared, www-free module
-`learned/utils/aws/cloudwatch.py` (also used by the `solr-shard-cpu` skill); this
-script is the thin CLI entry point over it — it parses args, loads each saved
+The analysis logic itself lives in the shared module
+`learned/hebb_utils/aws/cloudwatch.py` (also used by the `solr-shard-cpu` skill);
+this script is the thin CLI entry point over it — it parses args, loads each saved
 JSON file, and prints the per-series breach report. Importing the shared module
 does not change the gate-passing run shape: the *invoked* path is still
 `${CLAUDE_SKILL_DIR}/scripts/analyze_cpu_metrics.py`.
@@ -44,17 +44,17 @@ import argparse
 import os
 import sys
 
-# Import the shared analysis logic from learned/utils/. Walk up to the dir that
-# contains `utils/` (i.e. learned/) and put it on sys.path — no hardcoded depth.
-# This script is www-free, so there is no clash with vscode's own `utils` package.
+# Import the shared analysis logic from learned/hebb_utils/. Walk up to the dir that
+# contains `hebb_utils/` (i.e. learned/) and put it on sys.path — no hardcoded depth.
+# `hebb_utils` never clashes with vscode's own top-level `utils` package.
 _d = os.path.dirname(os.path.realpath(__file__))
-while not os.path.isdir(os.path.join(_d, "utils")):
+while not os.path.isdir(os.path.join(_d, "hebb_utils")):
     _parent = os.path.dirname(_d)
     if _parent == _d:
-        raise RuntimeError("could not locate learned/utils/ above this script")
+        raise RuntimeError("could not locate learned/hebb_utils/ above this script")
     _d = _parent
 sys.path.insert(0, _d)
-from utils.aws.cloudwatch import load_series, report  # noqa: E402
+from hebb_utils.aws.cloudwatch import load_series, report  # noqa: E402
 
 
 def main(argv=None):

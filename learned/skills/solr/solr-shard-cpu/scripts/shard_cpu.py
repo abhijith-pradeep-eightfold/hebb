@@ -11,21 +11,19 @@ There is no runtime judgment between the stages (the InstanceIds from the lookup
 feed straight into the CPU pull), so the whole thing is one deterministic
 transform — a script, per Rule A2.
 
-Two reuse mechanisms, chosen to respect the `learned/utils` namespace:
-  - **Host stage (www-coupled):** run the existing, canonical
-    `solr-shard-dns-lookup/scripts/get_shard_hosts.py` as a **subprocess**, with
-    `PYTHONPATH=$CODE_BASE/www` in the child env. That stage imports vscode's
-    own top-level `utils` package, which would shadow `learned/utils` if imported
-    in-process — so it stays in its own process. The lookup logic is reused, not
-    duplicated.
-  - **CPU stage (www-free):** import the shared `learned/utils/aws/cloudwatch.py`
-    (also used by `inspect-cloudwatch-cpu`) in-process. This script never puts
-    `$CODE_BASE/www` on its path, so `import utils.*` resolves unambiguously to
-    `learned/utils`.
+All reusable logic is imported **in-process** from the shared `hebb_utils` library:
+  - `hebb_utils.solr.shard_hosts.resolve_shard_hosts` — the $CODE_BASE config read;
+  - `hebb_utils.aws.ec2.resolve_instance_id`          — DNS -> InstanceId;
+  - `hebb_utils.aws.cloudwatch` (fetch_cpu / series_from_datapoints / report).
 
-Gate-passing invocation shape (www-free — `PYTHONPATH="$CODE_BASE"`, not /www):
+The host stage reads vscode config, so this script imports `www` in-process — which
+is exactly why the shared library is named `hebb_utils` and not `utils`: vscode has
+its own top-level `utils` package (`www/utils`), and the two coexist on `sys.path`
+only because the learned library's root is distinct.
 
-    PYTHONPATH="$CODE_BASE" "$VSCODE_PYTHON" \
+Gate-passing invocation shape (vscode-dependent — PYTHONPATH includes /www):
+
+    PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" \
         "${CLAUDE_SKILL_DIR}/scripts/shard_cpu.py" \
         --collection positions --shard-id 2
 
@@ -35,80 +33,27 @@ peaks) for every replica, flagging any bucket at or above --threshold.
 """
 import argparse
 import os
-import re
-import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
-# Import the shared, www-free CloudWatch logic from learned/utils/. Walk up to the
-# dir that contains `utils/` (i.e. learned/) and put it on sys.path — no hardcoded
-# depth. This script is www-free, so there is no clash with vscode's `utils`.
+# Import the shared logic from learned/hebb_utils/ — walk up to the dir that
+# contains `hebb_utils/` (i.e. learned/) and put it on sys.path (no hardcoded depth).
+# `hebb_utils` coexists with vscode's own top-level `utils` package on sys.path.
 _LEARNED = os.path.dirname(os.path.realpath(__file__))
-while not os.path.isdir(os.path.join(_LEARNED, "utils")):
+while not os.path.isdir(os.path.join(_LEARNED, "hebb_utils")):
     _parent = os.path.dirname(_LEARNED)
     if _parent == _LEARNED:
-        raise RuntimeError("could not locate learned/utils/ above this script")
+        raise RuntimeError("could not locate learned/hebb_utils/ above this script")
     _LEARNED = _parent
 sys.path.insert(0, _LEARNED)
-from utils.aws.cloudwatch import (  # noqa: E402
+from hebb_utils.solr.shard_hosts import resolve_shard_hosts, ShardLookupError  # noqa: E402
+from hebb_utils.aws.ec2 import resolve_instance_id  # noqa: E402
+from hebb_utils.aws.cloudwatch import (  # noqa: E402
     CloudWatchError,
     fetch_cpu,
     report,
     series_from_datapoints,
 )
-
-# The canonical host-lookup script (a sibling learned skill), reused via subprocess.
-GET_SHARD_HOSTS = os.path.join(
-    _LEARNED, "skills", "solr", "solr-shard-dns-lookup", "scripts", "get_shard_hosts.py")
-
-
-def lookup_hosts(collection, shard_id, region):
-    """Run get_shard_hosts.py (www-coupled) in a subprocess and parse its output.
-
-    Returns a dict: {region, available_shards, replicas: [{dns, instance_id}, ...]}.
-    Raises RuntimeError (message includes the child's stderr — e.g. the available
-    shard IDs when the shard doesn't exist) if the lookup fails.
-    """
-    code_base = os.environ.get("CODE_BASE")
-    if not code_base:
-        raise RuntimeError("CODE_BASE is not set; cannot run the shard-hosts lookup.")
-    if not os.path.exists(GET_SHARD_HOSTS):
-        raise RuntimeError(f"shard-hosts lookup script not found at {GET_SHARD_HOSTS}")
-
-    cmd = [sys.executable, GET_SHARD_HOSTS,
-           "--collection", collection, "--shard-id", str(shard_id)]
-    if region:
-        cmd += ["--region", region]
-    child_env = {**os.environ, "PYTHONPATH": os.path.join(code_base, "www")}
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=child_env, timeout=120)
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"shard-hosts lookup failed (exit {proc.returncode}):\n{proc.stderr.strip()}")
-
-    # Parse the machine-readable `key=value` block (stop at the human-readable part).
-    fields = {}
-    for line in proc.stdout.splitlines():
-        line = line.strip()
-        if line.startswith("---") or not line:
-            if fields:
-                break
-            continue
-        m = re.match(r"^([A-Za-z0-9_]+)=(.*)$", line)
-        if m:
-            fields[m.group(1)] = m.group(2)
-
-    count = int(fields.get("replica_count", "0"))
-    replicas = []
-    for i in range(count):
-        replicas.append({
-            "dns": fields.get(f"replica_{i}_dns", ""),
-            "instance_id": fields.get(f"replica_{i}_instance_id", ""),
-        })
-    return {
-        "region": fields.get("region", region or ""),
-        "available_shards": fields.get("available_shards", ""),
-        "replicas": replicas,
-    }
 
 
 def _iso_z(dt):
@@ -147,14 +92,15 @@ def main(argv=None):
     else:
         start_time = _iso_z(end_dt - timedelta(hours=args.hours))
 
-    # Stage 1: resolve replica hosts + InstanceIds (www-coupled subprocess).
+    # Stage 1: resolve replica hosts + InstanceIds (vscode-dependent, in-process).
     try:
-        info = lookup_hosts(args.collection, args.shard_id, args.region)
-    except RuntimeError as exc:
+        region, available_shards, replica_dns = resolve_shard_hosts(
+            args.collection, args.shard_id, args.region)
+    except ShardLookupError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    region = info["region"] or args.region or "us-west-2"
-    replicas = info["replicas"]
+    replicas = [{"dns": dns, "instance_id": resolve_instance_id(dns, region)}
+                for dns in replica_dns]
 
     print(f"collection : {args.collection}")
     print(f"shard_id   : {args.shard_id}")
@@ -164,14 +110,14 @@ def main(argv=None):
     print("note       : 'the CPU of a shard' is per-replica — one figure per replica host.")
     print()
 
-    # Stage 2: per-replica CPU (www-free, shared util). No judgment between stages.
+    # Stage 2: per-replica CPU (www-free analysis util). No judgment between stages.
     exit_code = 0
     for i, r in enumerate(replicas):
         iid = r["instance_id"]
         label_base = f"replica {i} ({r['dns']} / {iid})"
         if not iid or iid in ("UNKNOWN", "(skipped)"):
             print(f"=== {label_base} ===")
-            print(f"  no InstanceId resolved for this replica — cannot pull CPU.")
+            print("  no InstanceId resolved for this replica — cannot pull CPU.")
             print()
             exit_code = 1
             continue

@@ -20,9 +20,11 @@ Use a **constituent** skill instead when the task is narrower (they stay indepen
 
 ## How it works (one bundled script)
 
-`scripts/shard_cpu.py` runs the full pipeline:
-1. **Resolve replica hosts** by invoking the canonical `solr-shard-dns-lookup` lookup (`get_shard_hosts.py`) in a subprocess with `PYTHONPATH=$CODE_BASE/www` — that stage imports vscode config, so it stays in its own process (vscode ships its own top-level `utils` package, which would shadow `learned/utils`; see [[../../../wiki/vscode-repo/python-import-root|Python import root]]).
-2. **Pull + analyze CPU** for each replica InstanceId using the shared, www-free `learned/utils/aws/cloudwatch.py` (the same analysis module the `inspect-cloudwatch-cpu` skill uses), reporting **Average** (the statistic the alarm evaluates) and **Maximum** (per-minute peaks), flagging any bucket at or above the threshold.
+`scripts/shard_cpu.py` runs the full pipeline, importing every stage **in-process** from the shared `hebb_utils` library:
+1. **Resolve replica hosts** via `hebb_utils.solr.shard_hosts` (the same `$CODE_BASE` config read the `solr-shard-dns-lookup` skill uses) and resolve each DNS host to an InstanceId via `hebb_utils.aws.ec2`. This stage imports vscode config, so the script runs with `PYTHONPATH=$CODE_BASE/www` (see [[../../../wiki/vscode-repo/python-import-root|Python import root]]).
+2. **Pull + analyze CPU** for each replica InstanceId via `hebb_utils.aws.cloudwatch` (the same analysis module the `inspect-cloudwatch-cpu` skill uses), reporting **Average** (the statistic the alarm evaluates) and **Maximum** (per-minute peaks), flagging any bucket at or above the threshold.
+
+The shared library is named `hebb_utils` (not `utils`) so it coexists with vscode's own top-level `utils` package on `sys.path` — letting the vscode-dependent host stage and the shared logic run in one process.
 
 ## Steps
 
@@ -33,10 +35,10 @@ If you need the alarm semantics or the per-replica framing, skim [[../../../wiki
 ### 2. Run the bundled script (one call, no approval needed)
 
 ```bash
-PYTHONPATH="$CODE_BASE" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/shard_cpu.py" --collection <collection> --shard-id <N>
+PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/shard_cpu.py" --collection <collection> --shard-id <N>
 ```
 
-- `PYTHONPATH="$CODE_BASE"` (not `$CODE_BASE/www`) — this script is www-free and imports `learned/utils`; the www-coupled host lookup runs in its own subprocess with `$CODE_BASE/www`.
+- `PYTHONPATH="$CODE_BASE/www"` — the host stage reads vscode config in-process; the shared logic imports as `hebb_utils`, which coexists with vscode's `utils` (see [[../../../wiki/vscode-repo/python-import-root|Python import root]]).
 - Defaults to the **last 3 hours** at `--period 60` (1-minute buckets) and `--threshold 75`. Override the window with `--hours <H>` or an explicit `--start-time`/`--end-time` (ISO-8601 UTC, e.g. `2026-06-26T09:50:00Z`); change the region with `--region` (default resolves to `us-west-2`).
 - If the shard doesn't exist, the script exits non-zero and the error includes the **available shard IDs** (shard numbering is non-contiguous) — report them and confirm the right shard.
 - If a replica's InstanceId couldn't be resolved (AWS error), that replica is reported as un-pullable and the others still complete; the script does not abort the whole run.
@@ -48,5 +50,5 @@ For each replica, present its Average (the alarm-comparable figure) and Maximum 
 ## Notes
 
 - **A shard's CPU is per-replica.** Two replicas can both be idle, or asymmetric; report each — see [[../../../wiki/solr/solr-collection-topology|topology]].
-- **Constituents stay alive.** This skill reuses `solr-shard-dns-lookup` (via subprocess) and the `inspect-cloudwatch-cpu` analysis module (via `learned/utils/aws/cloudwatch.py`); both remain usable on their own.
+- **Constituents stay alive.** This skill shares logic with `solr-shard-dns-lookup` and `inspect-cloudwatch-cpu` through the `hebb_utils` library (`hebb_utils.solr.shard_hosts`, `hebb_utils.aws.ec2`, `hebb_utils.aws.cloudwatch`); both skills remain usable on their own.
 - **Reachability is only knowable by trying.** If the role can't read CloudWatch/EC2, the script reports the error per replica — report it plainly rather than guessing.
