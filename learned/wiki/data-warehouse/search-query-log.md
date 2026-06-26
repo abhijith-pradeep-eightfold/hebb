@@ -53,9 +53,7 @@ WHERE t_create >= DATE_SUB(NOW(), INTERVAL 6 HOUR)
 
 ### Timestamp semantics (gotcha)
 
-To count or filter "queries in time window X", filter on **`t_create`** — it is the time the query happened. **`analytics_loaded_at`** is when the row was loaded into the warehouse by ETL; using it for a query-time window gives wrong answers. There is typically a small ingest lag between the two (observed `max(t_create)` ~2 minutes behind warehouse `NOW()`).
-
-**`t_create` is stored in IST (local time), not UTC.** Confirmed by a warehouse-`NOW()` sanity row that read `2026-06-24 17:17`, matching IST wall-clock at the time (it was ~17:18 IST), **not** UTC (~11:48). This is load-bearing when correlating against a UTC source: e.g. an [[../infra/cloudwatch-cpu-alarm|EC2 CPUUtilization]] spike at 08:20–08:35 UTC must be matched against `t_create` literals **13:50–14:05 IST** (shift +5:30). See [[../process/incident-metric-correlation|incident metric-correlation discipline]] for the cross-source timezone trap.
+`t_create` is stored in **UTC** — like the other `log.*` tables (e.g. [[../processor/processor-event-log|processor_event_log]]). So when correlating against a UTC source such as an [[../infra/cloudwatch-cpu-alarm|EC2 CPUUtilization]] curve, it is already on the **same clock — no shift needed** (a CPU spike at 08:20–08:35 UTC is matched against `t_create` literals `08:20–08:35` directly).
 
 ### Physical layout
 
@@ -89,4 +87,4 @@ On 2026-06-24 at 13:38 (us-west-2 StarRocks), `COUNT(*)` over `t_create >= DATE_
 - [[datawarehouse-adapter-factory|DataWarehouseAdapterFactory]] — warehouse routing.
 
 ---
-*Sources:* `www/datawarehouse/starrocks/sql/fact_tables/search_query_log.sql`, `www/datawarehouse/sql/redshift_log_tables/search_query_log.sql`, `www/datawarehouse/databricks/analytics_project/src/sql/fact_tables/search_query_log.sql`. Witnesses: `inputs/2026-06-24-starrocks-query-count.md`, `inputs/2026-06-24-solr-query-buckets.md`.
+*Sources:* `www/datawarehouse/starrocks/sql/fact_tables/search_query_log.sql`, `www/datawarehouse/sql/redshift_log_tables/search_query_log.sql`, `www/datawarehouse/databricks/analytics_project/src/sql/fact_tables/search_query_log.sql`. Witnesses: `inputs/2026-06-24-starrocks-query-count.md`, `inputs/2026-06-24-solr-query-buckets.md`, `inputs/2026-06-26-queue-backed-up-batch-requests.md` (`t_create` confirmed **UTC**).

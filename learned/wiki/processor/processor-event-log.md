@@ -30,7 +30,7 @@ The authoritative column descriptions are the model's `get_column_description_fo
 | `latency_milliseconds` | Op latency; `message_processed` only (`:232`). |
 | `memory_usage_bytes` | RSS at processing; `message_processed` only (`:225`). |
 | `msg_retry_count` | SQS `ApproximateReceiveCount` (`:224`, set at `:191`). |
-| `t_create` | Row event timestamp. **Timezone is unconfirmed for this table** — pin it with a warehouse `NOW()` sanity row before correlating against another source. (One incident *inferred* UTC by aligning trace timestamps to a CloudWatch/UTC curve, but with no sanity-row check; note that the IST claim on the incident metric-correlation page is for `search_query_log`, a different table.) |
+| `t_create` | Row event timestamp, stored in **UTC** (like `search_query_log.t_create` and the other `log.*` tables). |
 | `system_id`, `cluster_type`, `git_revision`, `hostname` | system id; cluster (`spot`/`on_demand`/`canary`/dev) `:234`; git revision `:233`; machine IP `:228`. |
 
 ## Built-in accessor (and its limitation)
@@ -60,4 +60,4 @@ Importing `db.base_log_event` and `cloud_interfaces.datawarehouse` requires `PYT
 - [[../vscode-repo/python-import-root|Python import root]] — `PYTHONPATH=$CODE_BASE/www` for these `www`-rooted imports.
 
 ---
-*Sources:* `www/db/base_log_event.py` (:181, :186-187, :199-213, :215-235, :255-289), `www/processor/worker_utils.py:162-244`, `www/processor/queue_utils.py:277-303`, `www/processor/op_monitor.py:30,:53`. Witness: `inputs/2026-06-26-smid-processor-trace.md`.
+*Sources:* `www/db/base_log_event.py` (:181, :186-187, :199-213, :215-235, :255-289), `www/processor/worker_utils.py:162-244`, `www/processor/queue_utils.py:277-303`, `www/processor/op_monitor.py:30,:53`. Witnesses: `inputs/2026-06-26-smid-processor-trace.md`, `inputs/2026-06-26-queue-backed-up-batch-requests.md` (`t_create` confirmed **UTC**).

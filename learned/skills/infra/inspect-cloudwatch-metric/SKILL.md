@@ -44,7 +44,7 @@ There are two ways to arrive at this skill:
 
 4. **Reading the analysis output.** `analyze_cpu_metrics.py` sorts the (unordered) AWS datapoints by timestamp, prints min/max/mean, counts buckets `>= --threshold`, and shows each contiguous high-CPU block tagged `SUSTAINED` (>=5 buckets, i.e. it would clear the alarm's 5-of-6 rule) or `blip`. `--threshold` defaults to 75 (the Solr alarm threshold); `--stat` defaults to `Average` (what the alarm evaluates). Tag each file with `--label` (repeatable, paired with the files in order). No `$CODE_BASE` import is involved — this is a pure transform over the JSON.
 
-5. **Resolve the timezone before correlating.** CloudWatch is **UTC**. If you go on to correlate against [[../../../wiki/data-warehouse/search-query-log|log.search_query_log]], note its `t_create` is stored in **IST** — shift the CPU window **+5:30** (or the SQL window **−5:30**) so both are on one clock. See [[../../../wiki/process/incident-metric-correlation|incident metric-correlation discipline]] and pair this skill with `query-starrocks` + `plot-result-set` for the overlay.
+5. **Resolve the timezone before correlating.** CloudWatch is **UTC**, and `log.search_query_log.t_create` (and the other `log.*` tables) are also stored in **UTC** — same clock, no shift needed. See [[../../../wiki/process/incident-metric-correlation|incident metric-correlation discipline]] and pair this skill with `query-starrocks` + `plot-result-set` for the overlay.
 
 ## Queue-depth alarms (SQS "Queue backed up")
 

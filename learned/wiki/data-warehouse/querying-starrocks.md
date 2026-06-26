@@ -76,7 +76,8 @@ The query half still needs `PYTHONPATH="$CODE_BASE/www"`; matplotlib itself has 
 - [[starrocks|StarRocks data warehouse]] — region gating, credentials, connection.
 - [[search-query-log|log.search_query_log table]] — schema and column semantics.
 - [[datawarehouse-adapter-factory|DataWarehouseAdapterFactory]] — how a query gets routed to StarRocks vs. another warehouse.
+- [[../processor/processor-event-log|processor_event_log]] — another `log.*` table whose `t_create` is stored in UTC.
 - [[../vscode-repo/python-import-root|Python import root]] — running scripts that import `www` packages.
 
 ---
-*Sources:* `www/datawarehouse/starrocks/starrocks_utils.py` (:31-37, :34, :39, :45-51, :76, :79-81), `www/cloud_interfaces/adapters/datawarehouse/starrocks_adapter.py`. Witnesses: `inputs/2026-06-24-starrocks-query-count.md`, `inputs/2026-06-24-solr-query-buckets.md` (`time_slice` bucketing, matplotlib→PNG).
+*Sources:* `www/datawarehouse/starrocks/starrocks_utils.py` (:31-37, :34, :39, :45-51, :76, :79-81), `www/cloud_interfaces/adapters/datawarehouse/starrocks_adapter.py`. Witnesses: `inputs/2026-06-24-starrocks-query-count.md`, `inputs/2026-06-24-solr-query-buckets.md` (`time_slice` bucketing, matplotlib→PNG), `inputs/2026-06-26-queue-backed-up-batch-requests.md` (`t_create` confirmed **UTC**).

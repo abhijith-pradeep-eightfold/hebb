@@ -4,12 +4,13 @@
 
 ## Shared discipline
 
-Anchor on the real metric first, then correlate — the general method is [[../process/incident-metric-correlation|incident metric-correlation discipline]] (confirm the metric curve and its true window before attributing a cause; watch cross-source timezones). The standard oncall arc:
+Anchor on the real metric first, then correlate — the general method is [[../process/incident-metric-correlation|incident metric-correlation discipline]] (confirm the metric curve and its true window before attributing a cause; pin each source's timezone before overlaying). The standard oncall arc:
 
-1. **Read the alarm.** Note the **region** and the **resource type** (queue, host, collection…). The alarm is usually a CloudWatch alarm; some non-AWS cloud types page from Azure/OCI equivalents instead. Pull the alarm definition to learn the backing metric and threshold before looking at anything else.
+1. **Read the alarm.** Note the **region** and the **resource type** (queue, host, collection…). Take the region from the alarm name / console link. The alarm is usually a CloudWatch alarm; some non-AWS cloud types page from Azure/OCI equivalents instead. Pull the alarm definition to learn the backing metric and threshold before looking at anything else.
 2. **Characterize the metric.** Pull the underlying timeseries over the incident window plus a baseline; establish the spike shape (sudden vs gradual, peak vs threshold, sustained vs blip) — a non-correlation is itself a finding.
-3. **Find the driver.** Break the load down by the dimension that identifies the cause (per-op / per-tenant / per-host) over the confirmed window.
+3. **Find the driver.** Break the load down by the dimension that identifies the cause (per-op / per-tenant / per-host) over the confirmed window. Narrow to the **breach window** so a burst separates from heavy baseline traffic for the same dimension.
 4. **Trace and route.** Trace the driver to its root, then resolve **ownership** of the responsible code so the incident reaches the right team.
+5. **Report.** Deliver the finding as a **table-structured report** (below), and post it back to the page's Slack thread if asked.
 
 ## Ticket types
 
@@ -18,9 +19,30 @@ Anchor on the real metric first, then correlate — the general method is [[../p
 
 New ticket types are added here as their incidents are compiled — each as its own page with the alarm, the flow, and the automating skills/scripts.
 
+## Reporting an oncall ticket
+
+Deliver an oncall finding as a **detailed, table-structured report** — not a prose summary. This format is shared across every ticket type; each per-type page lists which tables apply. Use a table wherever the content is tabular:
+
+1. **Alarm** — name, region, backing metric, threshold / evaluation (datapoints, period), state.
+2. **Spike characterization** — baseline → onset → peak (vs threshold) → decay; the shape (sudden vs gradual, sustained vs blip).
+3. **Driver breakdown** — the load broken down by the causal dimension (per-op / per-tenant / per-host) over the confirmed window, with each driver's share.
+4. **Lineage** — root → target chain (per hop: the op, its queue/host, time, status), if the ticket traces to a root cause.
+5. **Ownership / routing** — the responsible code (op → file → owner team/author) so the incident reaches the right team.
+6. **Timeline** — the key timestamps in one place (all on one clock — UTC for CloudWatch/warehouse sources).
+
+### Posting the report to Slack
+
+When asked to post the report to Slack, treat it as an **outward-facing** action and follow two rules:
+
+- **Confirm the destination/surface before posting.** The post names people and customers; the channel/surface (Canvas in the page thread, a Markdown reply, a new channel message) is usually unspecified — confirm it first rather than guessing.
+- **Render people/teams/customers as plain text, never @-mentions** — so the post does not page anyone.
+
+The `oncall-post-report` skill encodes both rules; **use it** to create a Canvas with the full report and a concise threaded reply in the PagerDuty alert thread.
+
 ## Related skills
 
 - `oncall-queue-backed-up` — the high-level runbook skill for the *Queue backed up* ticket type (each ticket type has one such per-type runbook skill).
+- `oncall-post-report` — use it to post the finished table-structured report back to the PagerDuty Slack thread (Canvas + concise threaded reply), with a confirm-before-post gate and plain-text (non-paging) references. Applies to every ticket type.
 
 ## Related
 

@@ -72,14 +72,16 @@ Observed for the alarming host (replica 0) over the 6h band: 72 one-minute Avera
 
 ## Timezone — CloudWatch is UTC
 
-CloudWatch metric and alarm timestamps are **UTC**. The 08:20–08:35 UTC spike = **13:50–14:05 IST**, matching the 14:22 IST PagerDuty trigger. IST = UTC + 5:30 (14:22 IST = 08:52 UTC). When correlating against [[../data-warehouse/search-query-log|log.search_query_log]] — whose `t_create` is stored in **IST**, not UTC — you must reconcile the two; see [[../process/incident-metric-correlation|incident metric-correlation discipline]].
+CloudWatch metric and alarm timestamps are **UTC**. (The PagerDuty console may *display* the page time in IST — e.g. 14:22 IST = 08:52 UTC, IST = UTC + 5:30 — but that is a console-rendering detail; the underlying metric is UTC.)
+
+When correlating against [[../data-warehouse/search-query-log|log.search_query_log]], its `t_create` is also stored in **UTC** (so is `processor_event_log.t_create`) — the two are on the **same clock; no shift is needed**.
 
 ## Related
 
 - [[../solr/solr-collection-topology|Solr collection topology]] — what the alarm coordinate (collection/shard/replica/host) means and the host↔InstanceId mapping.
 - [[../solr/solr-shard-dns-lookup|Solr shard DNS lookup via search_config]] — how to get DNS hostnames (and then InstanceIds) when you start from a collection name + shard ID rather than an alarm.
 - [[../process/incident-metric-correlation|Incident metric-correlation discipline]] — using this CPU curve as the anchor before correlating to query load.
-- [[../data-warehouse/search-query-log|log.search_query_log table]] — the secondary source you correlate against (note its IST timestamps vs. CloudWatch UTC).
+- [[../data-warehouse/search-query-log|log.search_query_log table]] — the secondary source you correlate against (its `t_create` is UTC, same clock as CloudWatch — no shift needed).
 
 
 ---

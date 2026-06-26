@@ -36,7 +36,7 @@ The compiled, interlinked knowledge base for the `EightfoldAI/vscode` (`www`) co
 
 ## Process / agent discipline
 
-- [[process/incident-metric-correlation|Incident metric-correlation discipline]] — anchor on the real metric curve first, then correlate a candidate cause over the confirmed window plus a baseline; watch cross-source timezones (CloudWatch UTC vs. `t_create` IST); a non-correlation is a real finding.
+- [[process/incident-metric-correlation|Incident metric-correlation discipline]] — anchor on the real metric curve first, then correlate a candidate cause over the confirmed window plus a baseline (CloudWatch and warehouse `t_create` are both UTC — same clock, no shift); a non-correlation is a real finding.
 
 ## Skills
 

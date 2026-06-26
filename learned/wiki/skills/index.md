@@ -32,6 +32,9 @@ The capabilities compiled into Hebb. Each entry names a skill the way Claude Cod
 
 ## oncall
 
+- **`oncall-post-report`** — Post a finished oncall investigation report back to the PagerDuty Slack thread — create a Slack Canvas with the full table-structured report and reply with a concise summary in the alert thread. Use as the final step of any oncall ticket (queue backed up, Solr CPU too high, etc.) once the investigation is done and the user asks to "post the report in Slack" / "share this in the PD thread" / "post to the oncall channel". Encodes two safety rules every outward-facing oncall post must follow: confirm the destination/surface before posting, and render every person/team/customer reference as plain text (never an @-mention) so the post pages no one.
+  - required knowledge: [[../../../wiki/oncall/oncall-investigation|Oncall investigation — ticket types]]
+  - optional knowledge: [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]
 - **`oncall-queue-backed-up`** — High-level oncall runbook for a "Queue backed up" (SQS queue-depth) PagerDuty page. Use when you pick up a "[<region>] Queue backed up-<queue>" alarm and want the end-to-end investigation, not just one step — confirm and characterize the queue-depth spike, find which operation0/group flooded the queue, trace it to its root processor op, and route to the owning team. Sequences inspect-cloudwatch-metric → query-processor-event-log → trace-processor-op → codeowners-owner. Reach for this whenever an SQS queue-backed-up / queue-depth alarm pages.
   - required knowledge: [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]
   - optional knowledge: [[../../../wiki/oncall/oncall-investigation|Oncall investigation — ticket types]]
