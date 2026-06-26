@@ -16,7 +16,7 @@ The compile is a pipeline: `task-analyser` → `wiki-writer` + `skill-writer`. E
 
 ```
 core/                   # The engine — maintainer instructions, core skills, tools
-  CLAUDE.md             # Operating manual for the maintainer (read this first)
+  CLAUDE.md             # Project guide: understanding + command directives (role-neutral)
   agents/               # hebb (SE agent) and hebb_injector (maintainer) agent defs
   skills/
     maintainer/         # task-analyser, wiki-writer, skill-writer
@@ -70,6 +70,8 @@ PYTHONPATH="$CODE_BASE" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/X.py" "$@"
 
 ## More detail
 
-- **Engine rules and judgment criteria**: `core/CLAUDE.md`
+- **Project guide (understanding + command directives)**: `core/CLAUDE.md`
+- **Maintainer manual (injector loop, judgment rules A1–A8, fixing-at-source, learning loop, knowledge↔skill graph)**: `core/agents/hebb_injector.md`
+- **SE agent rules (witness role, log cadence, write boundary)**: `core/agents/hebb.md`
 - **Wiki**: start at `wiki/index.md` and follow the wikilinks
 - **Individual skill docs**: read the `SKILL.md` in each skill directory

@@ -5,7 +5,7 @@ description: File analysed knowledge into the Hebb wiki the way Karpathy's LLM-W
 
 # Write the wiki
 
-You are the injector's **knowledge stage**. Take the knowledge writeup from `task-analyser` and compile it into `wiki/` — Hebb's compiled, interlinked "what is true." This is Karpathy's LLM-Wiki pattern: raw sources (`inputs/`) are immutable; the wiki is yours to own and keep consistent; the schema (`core/CLAUDE.md`) is the convention. Compile once so future agents query the artifact, not the raw log.
+You are the injector's **knowledge stage**. Take the knowledge writeup from `task-analyser` and compile it into `wiki/` — Hebb's compiled, interlinked "what is true." This is Karpathy's LLM-Wiki pattern: raw sources (`inputs/`) are immutable; the wiki is yours to own and keep consistent; the schema (`core/agents/hebb_injector.md`, Rule A8) is the convention. Compile once so future agents query the artifact, not the raw log.
 
 ## Steps
 1. **Read the existing wiki first.** Use the `wiki-reader` skill: start at `wiki/index.md` and follow wikilinks to whatever this knowledge touches. The point is to **update existing pages, not spawn parallel ones** — find what already covers the topic before creating anything. (If `wiki/index.md` doesn't exist yet, this is the first page; create the index.)
@@ -22,7 +22,7 @@ You are the injector's **knowledge stage**. Take the knowledge writeup from `tas
 8. **Run the lint loop before finishing.** Run `core/tools/lint.py` as a distinct verification pass (maker/checker separation — the checker is not the writer grading itself). It enforces the Karpathy lint set plus the knowledge↔skill symmetry: no orphan pages, no dangling wikilinks, no contradictions left standing, no missing cross-references, no important concept mentioned-but-unlinked, no `CONFLICT` left unresolved, and every `## Related skills` mention matched by the skill's `knowledge_*` frontmatter (and vice versa). If it reports problems, fix them and re-run; repeat up to **3 times**. If something still fails after that, stop looping and surface it in the PR rather than loop forever.
 
 ## Boundaries
-- A compile writes **only** under `wiki/`. Skills are `skill-writer`'s job; don't write `skills/` here. Engine fixes (`core/`) are a separate maintainer task (`core/CLAUDE.md`), not part of compiling knowledge into the wiki.
+- A compile writes **only** under `wiki/`. Skills are `skill-writer`'s job; don't write `skills/` here. Engine fixes (`core/`) are a separate maintainer task (`core/agents/hebb_injector.md` → *Fixing issues at the source*), not part of compiling knowledge into the wiki.
 - You may **read** `$CODE_BASE` — read-only and **scoped to the single file** a `CONFLICT`'s `proof:` link names — solely to reconcile a conflict (current code wins). Never crawl the subsystem, and never write outside `wiki/`.
 - Facts only — observations compiled into durable knowledge. Don't record "this should be a skill / page / agent"; that judgment already happened upstream.
 - **No opaque environment identifiers.** Do not include internal service codes (e.g. PagerDuty service IDs), cloud resource IDs (EC2 instance IDs, ARNs), or any other identifier that is opaque, environment-specific, and carries no conceptual meaning. Name entities by their human-readable name only. These values are not stable and silently become wrong when infrastructure is reorganized.
