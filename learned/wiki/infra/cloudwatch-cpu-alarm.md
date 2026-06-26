@@ -24,6 +24,7 @@ aws ec2 describe-instances --region us-west-2 \
 
 - Run once per replica DNS hostname. The result (`i-...`) feeds directly into Step 2 below.
 - If you *do* have an alarm name, skip this step — the alarm definition in Step 1 already carries the `InstanceId` dimension.
+- This is also the path for a **plain current-state question** ("what is the CPU of `<collection>` shard `<N>` right now?") with no incident or alarm behind it: resolve the InstanceIds, **skip Step 1 (`describe-alarms`) entirely**, and go straight to the Step 2 timeseries. Report each replica per [[../solr/solr-collection-topology|topology]] — a shard's CPU is per-replica. (Confirmed on positions shard 2: both replicas ~5% Average, no alarm firing.) For this collection+shard case the `solr-shard-cpu` skill runs the whole pipeline in one call — see the [[skills/index|Skills catalog]].
 
 ## Step 1 — the alarm definition
 
@@ -82,4 +83,4 @@ CloudWatch metric and alarm timestamps are **UTC**. The 08:20–08:35 UTC spike 
 
 
 ---
-*Sources:* witness `inputs/2026-06-24-solr-cpu-spike-debug.md` (`[17:06]` env/reachability, `[17:09]` prepared commands, `[17:14]` both `describe-alarms` + `get-metric-statistics` results and the UTC/IST resolution).
+*Sources:* witness `inputs/2026-06-24-solr-cpu-spike-debug.md` (`[17:06]` env/reachability, `[17:09]` prepared commands, `[17:14]` both `describe-alarms` + `get-metric-statistics` results and the UTC/IST resolution); witness `inputs/2026-06-26-positions-shard2-cpu.md` (`[12:50]` current-state, no-alarm `get-metric-statistics` on both `positions` shard 2 replica InstanceIds, Average + Maximum, threshold 75 — Step 0 → Step 2 with Step 1 skipped).

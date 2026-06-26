@@ -45,6 +45,8 @@ This matters when correlating CPU to load: a read-driven CPU spike on one replic
 
 **Idle replica pattern:** A replica can be essentially idle (mean CPU well under 1%) while its sibling runs at moderate load (mean ~10%), even with no alarm condition. This has been observed on positions shard 7 (one replica mean 0.5%, the other mean 10.0% over 6 hours, neither above the 75% threshold). Possible causes: asymmetric load-balancer routing, a node temporarily not receiving read traffic, or load-balancer misconfiguration. When investigating shard health, always pull CPU for **all replicas** — a quiet replica is as noteworthy as an alarming one.
 
+**A shard's CPU is per-replica — there is no single number.** "The CPU of `<collection>` shard `<N>`" resolves to one host-level figure **per replica** (each replica's own `InstanceId`), so report every replica rather than collapsing them to one value. Report each replica's **Average** — the statistic the [[../infra/cloudwatch-cpu-alarm|alarm]] evaluates, so the directly comparable number — alongside its **Maximum** (per-minute peaks). The idle state can also be *symmetric*, not just the asymmetric split above: positions shard 2 measured ~5% mean Average on **both** replicas over 3h (≤23% Maximum, 0/36 one-minute buckets near the 75% threshold) — a healthy current-state read with no alarm in play. Two quiet, near-equal replicas are normal, not anomalous. The `solr-shard-cpu` skill answers this whole "CPU of `<collection>` shard `<N>`" question in one call (host lookup → per-replica CPU); see the [[skills/index|Skills catalog]].
+
 ## Related
 
 - [[solr-shard-dns-lookup|Solr shard DNS lookup via search_config]] — look up replica DNS hostnames from `search_config` and resolve them to EC2 InstanceIds; includes the positions vs. profiles config key distinction.
@@ -53,4 +55,4 @@ This matters when correlating CPU to load: a read-driven CPU spike on one replic
 - [[../data-warehouse/search-query-log|log.search_query_log table]] — the per-query fact table carrying `core`/`shard_id`/`search_host`/`api`; how shard-21 hosts and traffic were confirmed.
 
 ---
-*Sources:* witness `inputs/2026-06-24-solr-cpu-spike-debug.md` (`[17:00]` PagerDuty post, `[17:14]` two `describe-alarms` results + InstanceIds, `[17:25]` `search_host`/`api` breakdown).
+*Sources:* witness `inputs/2026-06-24-solr-cpu-spike-debug.md` (`[17:00]` PagerDuty post, `[17:14]` two `describe-alarms` results + InstanceIds, `[17:25]` `search_host`/`api` breakdown); witness `inputs/2026-06-26-positions-shard2-cpu.md` (`[12:50]` both `positions` shard 2 replicas ~5% mean Average / ≤23% Maximum, 0/36 buckets at threshold — the symmetric-idle, per-replica current-state read).

@@ -27,7 +27,10 @@
       "Bash(realpath:*)",
       "Bash(dirname:*)",
       "Bash(basename:*)",
-      "Bash(which:*)"
+      "Bash(which:*)",
+      "Read(//home/ec2-user/vscode/**)",
+      "Write(inputs/**)",
+      "Edit(inputs/**)"
     ]
   },
   "hooks": {

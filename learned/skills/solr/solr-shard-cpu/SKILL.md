@@ -1,0 +1,52 @@
+---
+name: solr-shard-cpu
+description: Report the CPU utilization of a Solr shard end-to-end, in one step — given a collection name and shard ID, resolve every replica's EC2 host and pull each replica's CloudWatch CPU (Average + Maximum) against the alarm threshold. Use whenever a task asks for the CPU / utilization / load of a Solr shard starting from collection + shard number rather than an alarm or an InstanceId — e.g. "what is the CPU of positions shard 2", "CPU of profiles shard 21", "is user_calendar_events shard 0 hot", "check the load on positions shard 7". This is the one-call combination of solr-shard-dns-lookup → inspect-cloudwatch-cpu (no judgment between the steps). Use the individual skills instead when you need ONLY the hosts (solr-shard-dns-lookup) or ONLY a CPU curve from a PagerDuty alarm / known InstanceId (inspect-cloudwatch-cpu).
+---
+
+# Solr shard CPU (collection + shard → per-replica CPU)
+
+Answer "what is the CPU of `<collection>` shard `<N>`?" in a single invocation. This skill **collapses a no-judgment chain** — `solr-shard-dns-lookup` → `inspect-cloudwatch-cpu` — into one bundled script: the replica InstanceIds the lookup produces feed straight into the CloudWatch pull, with no decision in between, so the whole pipeline is one deterministic run.
+
+The grounding facts live in the wiki — [[../../../wiki/solr/solr-collection-topology|Solr collection topology]] (a shard spans replica hosts; **its CPU is per-replica**) and [[../../../wiki/infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]] (the 75% Average alarm, the `InstanceId` dimension, UTC). The runtime judgment this skill carries is just **which collection, which shard, and which window**.
+
+## When to use this skill
+
+- You have a **collection name + shard ID** and want its CPU — a current-state "how hot is this shard right now" question, with no PagerDuty alarm in hand.
+- You want **all replicas** of the shard measured (a shard's CPU is per-replica; this skill reports each host's Average and Maximum).
+
+Use a **constituent** skill instead when the task is narrower (they stay independently usable):
+- only need the hosts/InstanceIds → **`solr-shard-dns-lookup`**;
+- already have a PagerDuty alarm name or an InstanceId, or want to characterize a known spike → **`inspect-cloudwatch-cpu`**.
+
+## How it works (one bundled script)
+
+`scripts/shard_cpu.py` runs the full pipeline:
+1. **Resolve replica hosts** by invoking the canonical `solr-shard-dns-lookup` lookup (`get_shard_hosts.py`) in a subprocess with `PYTHONPATH=$CODE_BASE/www` — that stage imports vscode config, so it stays in its own process (vscode ships its own top-level `utils` package, which would shadow `learned/utils`; see [[../../../wiki/vscode-repo/python-import-root|Python import root]]).
+2. **Pull + analyze CPU** for each replica InstanceId using the shared, www-free `learned/utils/aws/cloudwatch.py` (the same analysis module the `inspect-cloudwatch-cpu` skill uses), reporting **Average** (the statistic the alarm evaluates) and **Maximum** (per-minute peaks), flagging any bucket at or above the threshold.
+
+## Steps
+
+### 1. (Optional) skim the wiki
+
+If you need the alarm semantics or the per-replica framing, skim [[../../../wiki/solr/solr-collection-topology|Solr collection topology]] and [[../../../wiki/infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]].
+
+### 2. Run the bundled script (one call, no approval needed)
+
+```bash
+PYTHONPATH="$CODE_BASE" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/shard_cpu.py" --collection <collection> --shard-id <N>
+```
+
+- `PYTHONPATH="$CODE_BASE"` (not `$CODE_BASE/www`) — this script is www-free and imports `learned/utils`; the www-coupled host lookup runs in its own subprocess with `$CODE_BASE/www`.
+- Defaults to the **last 3 hours** at `--period 60` (1-minute buckets) and `--threshold 75`. Override the window with `--hours <H>` or an explicit `--start-time`/`--end-time` (ISO-8601 UTC, e.g. `2026-06-26T09:50:00Z`); change the region with `--region` (default resolves to `us-west-2`).
+- If the shard doesn't exist, the script exits non-zero and the error includes the **available shard IDs** (shard numbering is non-contiguous) — report them and confirm the right shard.
+- If a replica's InstanceId couldn't be resolved (AWS error), that replica is reported as un-pullable and the others still complete; the script does not abort the whole run.
+
+### 3. Report
+
+For each replica, present its Average (the alarm-comparable figure) and Maximum (peaks), plus whether any bucket reached the threshold. There is **no single shard CPU** — report one figure set per replica host. Include collection, shard_id, region, and the window.
+
+## Notes
+
+- **A shard's CPU is per-replica.** Two replicas can both be idle, or asymmetric; report each — see [[../../../wiki/solr/solr-collection-topology|topology]].
+- **Constituents stay alive.** This skill reuses `solr-shard-dns-lookup` (via subprocess) and the `inspect-cloudwatch-cpu` analysis module (via `learned/utils/aws/cloudwatch.py`); both remain usable on their own.
+- **Reachability is only knowable by trying.** If the role can't read CloudWatch/EC2, the script reports the error per replica — report it plainly rather than guessing.

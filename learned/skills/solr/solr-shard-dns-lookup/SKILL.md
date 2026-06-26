@@ -58,6 +58,8 @@ Include the collection, shard_id, and region so downstream steps have the full c
 
 If the goal is to check CPU utilization, hand the InstanceIds to **`inspect-cloudwatch-cpu`** (starting from its "already have InstanceIds" entry point — skip `describe-alarms`). See [[../../../wiki/infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]].
 
+> If the task is simply **"the CPU of `<collection>` shard `<N>`"**, you don't need to run this skill and `inspect-cloudwatch-cpu` by hand — the combined **`solr-shard-cpu`** skill runs this lookup and the per-replica CPU pull in one call. This skill stays the right choice when you need only the hosts/InstanceIds.
+
 ## Notes
 
 - **Shard IDs are not contiguous.** Always let the script enumerate available shards rather than assuming sequential IDs.

@@ -10,11 +10,18 @@ import). It is bundled under the skill dir so the bash execution policy
 (`core/tools/bash_exec_policy.py`) auto-allows a clean `python .../scripts/...`
 invocation without a prompt.
 
+The analysis logic itself lives in the shared, www-free module
+`learned/utils/aws/cloudwatch.py` (also used by the `solr-shard-cpu` skill); this
+script is the thin CLI entry point over it — it parses args, loads each saved
+JSON file, and prints the per-series breach report. Importing the shared module
+does not change the gate-passing run shape: the *invoked* path is still
+`${CLAUDE_SKILL_DIR}/scripts/analyze_cpu_metrics.py`.
+
 Input is one or more saved `get-metric-statistics` JSON files, passed **by path**
 (never inline) so no shell metacharacter reaches the command line. Each file is
 the raw AWS output: `{"Label": "...", "Datapoints": [{"Timestamp": "...",
-"Average": .., "Maximum": ..}, ...]}`. AWS returns datapoints unordered; we sort
-by timestamp before reporting.
+"Average": .., "Maximum": ..}, ...]}`. AWS returns datapoints unordered; the
+shared module sorts by timestamp before reporting.
 
 For each series the script prints:
   - count of datapoints, and the time span covered;
@@ -34,74 +41,20 @@ import is needed, but PYTHONPATH is harmless if set):
 files); without it the JSON `Label` / filename is used.
 """
 import argparse
-import json
 import os
 import sys
-from datetime import datetime
 
-
-def _parse_ts(s):
-    """Parse an AWS ISO-8601 timestamp (e.g. '2026-06-15T08:20:00Z' or with offset)."""
-    s = s.strip()
-    if s.endswith("Z"):
-        s = s[:-1] + "+00:00"
-    return datetime.fromisoformat(s)
-
-
-def _load_series(path, stat):
-    with open(path) as fh:
-        doc = json.load(fh)
-    pts = doc.get("Datapoints", []) if isinstance(doc, dict) else list(doc)
-    rows = []
-    for p in pts:
-        ts = p.get("Timestamp")
-        val = p.get(stat)
-        if ts is None or val is None:
-            continue
-        rows.append((_parse_ts(ts), float(val)))
-    rows.sort(key=lambda r: r[0])
-    return rows, (doc.get("Label") if isinstance(doc, dict) else None)
-
-
-def _contiguous_breaches(rows, threshold):
-    """Return list of (start_ts, end_ts, n, peak) for runs of consecutive >= threshold buckets."""
-    blocks = []
-    run = []
-    for ts, val in rows:
-        if val >= threshold:
-            run.append((ts, val))
-        elif run:
-            blocks.append(run)
-            run = []
-    if run:
-        blocks.append(run)
-    return [
-        (b[0][0], b[-1][0], len(b), max(v for _, v in b))
-        for b in blocks
-    ]
-
-
-def _report(label, rows, threshold, stat):
-    print(f"=== {label} ===")
-    if not rows:
-        print("  (no datapoints)")
-        return
-    vals = [v for _, v in rows]
-    n = len(vals)
-    n_breach = sum(1 for v in vals if v >= threshold)
-    print(f"  {stat}: {n} buckets, span {rows[0][0].isoformat()} .. {rows[-1][0].isoformat()}")
-    print(f"  min={min(vals):.1f}  max={max(vals):.1f}  mean={sum(vals)/n:.1f}")
-    print(f"  buckets >= {threshold}: {n_breach}")
-    blocks = _contiguous_breaches(rows, threshold)
-    if blocks:
-        print(f"  contiguous >= {threshold} block(s):")
-        for start, end, count, peak in blocks:
-            kind = "SUSTAINED" if count >= 5 else "blip"
-            print(f"    {start.isoformat()} .. {end.isoformat()}  "
-                  f"({count} bucket(s), peak {peak:.1f})  [{kind}]")
-    else:
-        print(f"  no bucket reached {threshold}")
-    print()
+# Import the shared analysis logic from learned/utils/. Walk up to the dir that
+# contains `utils/` (i.e. learned/) and put it on sys.path — no hardcoded depth.
+# This script is www-free, so there is no clash with vscode's own `utils` package.
+_d = os.path.dirname(os.path.realpath(__file__))
+while not os.path.isdir(os.path.join(_d, "utils")):
+    _parent = os.path.dirname(_d)
+    if _parent == _d:
+        raise RuntimeError("could not locate learned/utils/ above this script")
+    _d = _parent
+sys.path.insert(0, _d)
+from utils.aws.cloudwatch import load_series, report  # noqa: E402
 
 
 def main(argv=None):
@@ -122,10 +75,10 @@ def main(argv=None):
         if not os.path.exists(path):
             print(f"missing file: {path}", file=sys.stderr)
             return 2
-        rows, json_label = _load_series(path, args.stat)
+        rows, json_label = load_series(path, args.stat)
         label = (args.label[i] if i < len(args.label)
                  else (json_label or os.path.basename(path)))
-        _report(label, rows, args.threshold, args.stat)
+        report(label, rows, args.threshold, args.stat)
     return 0
 
 

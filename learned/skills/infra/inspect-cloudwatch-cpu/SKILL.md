@@ -18,6 +18,8 @@ There are two ways to arrive at this skill:
 - **From a CloudWatch alarm name or PagerDuty page** (the common case): proceed to Step 1 — `describe-alarms` gives you the `InstanceId`.
 - **From EC2 DNS hostnames** (e.g. after running **`solr-shard-dns-lookup`**): you already have InstanceIds; skip Step 2 entirely and go straight to Step 3.
 
+> If the task starts from a **collection + shard ID** and just wants that shard's CPU, the combined **`solr-shard-cpu`** skill runs the whole pipeline (host lookup → per-replica CPU) in one call — use it instead of running the two skills by hand. This skill stays the right choice when you start from an alarm name or a known InstanceId, or want to characterize a known spike.
+
 ## Steps
 
 1. **Read the access pattern from the wiki** (via `wiki-reader`):
