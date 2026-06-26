@@ -25,3 +25,7 @@ The compiled, interlinked knowledge base for the `EightfoldAI/vscode` (`www`) co
 ## Process / agent discipline
 
 - [[process/incident-metric-correlation|Incident metric-correlation discipline]] — anchor on the real metric curve first, then correlate a candidate cause over the confirmed window plus a baseline; watch cross-source timezones (CloudWatch UTC vs. `t_create` IST); a non-correlation is a real finding.
+
+## Skills
+
+- [[skills/index|Skills catalog]] — every capability compiled into Hebb, named the way Claude Code loads it, each linked to the wiki pages it builds on. Generated from skill frontmatter; consult it and load the skill that fits before improvising.

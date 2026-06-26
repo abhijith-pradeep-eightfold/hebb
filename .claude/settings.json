@@ -42,6 +42,28 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/core/tools/inject_wiki_index.py\"",
+            "statusMessage": "Injecting Hebb wiki index"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/core/tools/log_cadence_check.py\"",
+            "statusMessage": "Checking session-log cadence"
+          }
+        ]
+      }
     ]
   },
   "enabledPlugins": {

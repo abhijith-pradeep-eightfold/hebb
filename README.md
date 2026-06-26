@@ -6,31 +6,37 @@ Hebb compiles the experience of software-engineering agents into durable, interl
 
 A Claude Code SE agent does real work against a codebase. As it works, it writes an observations-only **session-doc** (witness log) into `inputs/`. The Hebb maintainer then **compiles** that log once into:
 
-- **`wiki/`** — "what is true": entity and concept pages, interlinked, covering the codebase, infra, and process.
-- **`skills/`** — "how to do X": reusable skill files that future agents load to avoid repeating manual steps.
-- **`agents/`** — roles: custom agent definitions (rare; promoted only when a skill isn't enough).
+- **`learned/wiki/`** — "what is true": entity and concept pages, interlinked, covering the codebase, infra, and process.
+- **`learned/skills/`** — "how to do X": reusable skill files that future agents load to avoid repeating manual steps.
+- **`learned/agents/`** — roles: custom agent definitions (rare; created on demand, only when a skill isn't enough).
 
-The compile is a pipeline: `task-analyser` → `wiki-writer` + `skill-writer`. Everything in `inputs/` is immutable history; everything in `wiki/` and `skills/` is compiled output that the maintainer owns and keeps current.
+The compile is a pipeline: `task-analyser` → `wiki-writer` + `skill-writer`. Everything in `inputs/` is immutable history; everything under `learned/` is compiled output that the maintainer owns and keeps current.
 
 ## Repo layout
 
 ```
 core/                   # The engine — maintainer instructions, core skills, tools
-  CLAUDE.md             # Operating manual for the maintainer (read this first)
+  CLAUDE.md             # Project guide: understanding + command directives (role-neutral)
   agents/               # hebb (SE agent) and hebb_injector (maintainer) agent defs
   skills/
     maintainer/         # task-analyser, wiki-writer, skill-writer
     hebb/               # Skills available to the SE agent (task-executer, log-appender, …)
     common/             # Shared skills (wiki-reader, used by both roles)
   tools/
-    publish.py          # Regenerates .claude/skills/ and .claude/agents/ symlinks
+    publish.py          # Regenerates .claude/ symlinks + the wiki Skills catalog
     bash_exec_policy.py # Gate: auto-allows bundled skill scripts, prompts others
+    lint.py             # Structural checker for the injector's self-correction loop
+    inject_wiki_index.py   # SessionStart hook: injects learned/wiki/index.md as context
+    log_cadence_check.py   # Stop hook: nudges the SE agent to keep its log current
+    intervention_report.py # Cross-doc intervention tabulation + rate over time
 
-skills/                 # Compiled learned skills (output of skill-writer)
-wiki/                   # Compiled wiki pages (output of wiki-writer)
-agents/                 # Compiled learned agents (rare)
+learned/                # Compiled output of the engine
+  skills/               # Learned skills (output of skill-writer)
+  wiki/                 # Wiki pages (output of wiki-writer); learned/wiki/skills/index.md is the generated Skills catalog
+  utils/                # Shared utilities (deterministic logic shared by skills)
+  agents/               # Learned agents — created on demand (rare)
 inputs/                 # Immutable witness logs from SE agent sessions
-.claude/                # Runtime symlinks into core/ and skills/ — don't hand-edit
+.claude/                # Runtime symlinks into core/ and learned/ — don't hand-edit
 ```
 
 ## Two agents
@@ -42,13 +48,14 @@ inputs/                 # Immutable witness logs from SE agent sessions
 
 ## The compile loop
 
-1. The SE agent works on a task, appending observations to a session-doc in `inputs/` via `log-appender`.
-2. The maintainer invokes the injector with that doc path.
-3. **`task-analyser`** reads the doc and emits a knowledge writeup + skill requirements.
-4. **`wiki-writer`** compiles the knowledge writeup into `wiki/` (checks existing pages first).
-5. **`skill-writer`** handles each skill requirement: reuse/extend/create per Rule A4.
-6. `core/tools/publish.py` regenerates the `.claude/` symlinks so new skills are discoverable.
-7. A PR is opened with the diff.
+1. The SE agent works on a task, appending observations to a session-doc in `inputs/` via `log-appender` — each step carrying a `proof:` vscode link, the full scratch script inline, and an `effort:` note, plus an `[INTERVENTION]` entry every time a human steps in.
+2. A human invokes the injector **manually** with that doc path (the SE agent never auto-triggers it).
+3. **`task-analyser`** reads the doc, mines every intervention into a requirement, weights by effort, flags wiki/code conflicts, and emits a knowledge writeup + skill requirements.
+4. **`wiki-writer`** compiles the knowledge into `learned/wiki/` (checks existing pages first), adds explicit loadable skill mentions + `## Related skills`, and reconciles conflicts against the live code (current code wins).
+5. **`skill-writer`** handles each skill requirement per Rule A4: reuse/extend/compose/create, reusable-by-default with required/optional knowledge, extracting shared logic to `learned/utils/`.
+6. `core/tools/publish.py` regenerates the `.claude/` symlinks and the wiki Skills catalog.
+7. `core/tools/lint.py` runs as the checker; the injector loops fix→publish→lint until clean.
+8. The injector then **stops and reports**; it opens a PR only when you ask (never automatically).
 
 ## Environment variables (for skills that run against the codebase)
 
@@ -64,6 +71,8 @@ PYTHONPATH="$CODE_BASE" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/X.py" "$@"
 
 ## More detail
 
-- **Engine rules and judgment criteria**: `core/CLAUDE.md`
-- **Wiki**: start at `wiki/index.md` and follow the wikilinks
+- **Project guide (understanding + command directives)**: `core/CLAUDE.md`
+- **Maintainer manual (injector loop, judgment rules A1–A8, fixing-at-source, learning loop, knowledge↔skill graph)**: `core/agents/hebb_injector.md`
+- **SE agent rules (witness role, log cadence, write boundary)**: `core/agents/hebb.md`
+- **Wiki**: start at `learned/wiki/index.md` and follow the wikilinks
 - **Individual skill docs**: read the `SKILL.md` in each skill directory
