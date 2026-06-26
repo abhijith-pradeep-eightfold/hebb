@@ -10,7 +10,8 @@ The wiki (`wiki/`) is Hebb's compiled knowledge — "what is true" about the sys
 ## Steps
 1. **Read the top-level index** — the navigation root at `wiki/index.md`. It lists and links the pages in the wiki.
 2. **Follow wikilinks** (`[[page-name]]`) from the index to the pages you need, and follow links between pages until you understand the part relevant to your task. Pages are grouped into `wiki/<domain>/` subfolders, but the domain is just how the maintainer organizes knowledge — navigate by the links, not by guessing folders.
-3. **Synthesize** only what bears on the task at hand.
+3. **Load the skills the wiki names.** When a page you're reading explicitly names a skill (by its `name` + a "use it to …" trigger, often in a `## Related skills` section) and that skill fits your task, **load and invoke it via the Skill tool rather than improvising the capability by hand.** Skipping a clearly-fitting named skill is allowed only if you record *why* — that "why" is a discovery signal (a Rule-A4 description fix) for the maintainer.
+4. **Synthesize** only what bears on the task at hand.
 
 ## When the wiki falls short
 If `wiki/index.md` is missing, the index doesn't link your topic, or a wikilink is dead, treat it as a **gap** — note the symptom ("no wiki page for X", "index missing X"). Do not invent an answer; fall back to other skills (`task-executer` to inspect `$CODE_BASE`, `external-context-puller` for ticket/thread context) and record what you actually found.

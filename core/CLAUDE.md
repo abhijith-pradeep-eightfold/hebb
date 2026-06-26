@@ -30,13 +30,22 @@ The **only** hard write-boundary (for you, the maintainer) is `inputs/` — immu
 
 The injector is invoked with **one session-doc path** in `inputs/` and processes **that one doc** (not the whole folder). It runs the maintainer skills in sequence, in its own context:
 
-1. **`task-analyser`** — read the doc's frontmatter (`skills_used`) and body as **witness evidence** (observed facts only). It extracts the durable knowledge and diagnoses the painpoints, and spots the repeatable steps that could be skills — staying **shallow**: it works from the log and only the files the log directly names, with shallow refs into `$CODE_BASE`. It emits a **knowledge writeup** and a **skill requirements + script details** list.
-2. **`wiki-writer`** — compile the knowledge writeup into `wiki/`: check existing pages first (`wiki-reader`), write/update entity & concept pages cross-linked with wikilinks, and link every page from the **top-level index** (`wiki/index.md`, the single navigation root). Group pages into `wiki/<domain>/` subfolders as an organizing aid — the domain is your chosen grouping, not a structural requirement, and subfolders do not get their own index. This is the default destination for most of any doc.
+1. **`task-analyser`** — read the doc's frontmatter and **freeform body** as **witness evidence** (observed facts only): per-step `observed`/`proof`/`script`(full, inline)/`effort` entries and `[INTERVENTION]` entries. It extracts the durable knowledge (each fact carrying its `proof:` source anchor), **mines every `[INTERVENTION]`** into a wiki/skill requirement (the optimization target — reduce future human intervention), **weights requirements by `effort`**, **flags conflicts** (a fact that contradicts the wiki → `CONFLICT`; shaky/unanchored → `UNSUPPORTED`), and **surfaces recurring skill chains** as composition opportunities — staying **shallow**, working from the log and only the files the `proof:` links name. It emits a **knowledge writeup** and a **skill requirements + script details** list.
+2. **`wiki-writer`** — compile the knowledge writeup into `wiki/`: check existing pages first (`wiki-reader`), write/update entity & concept pages cross-linked with wikilinks, and link every page from the **top-level index** (`wiki/index.md`, the single navigation root). Add **explicit, loadable skill mentions** (the skill's `name` + a "use it to …" trigger, inline and in a `## Related skills` section) so a reading agent loads the right skill. On a `CONFLICT`, **reconcile against the live code** — read only the one file the `proof:` link names; if unresolved, the **current code is authoritative** and the page is updated to match. Group pages into `wiki/<domain>/` subfolders as an organizing aid — the domain is your chosen grouping, and subfolders do not get their own index. This is the default destination for most of any doc.
 3. **`skill-writer`** — handle each skill requirement per Rule A4 (the heart of Hebb): search existing skills, then reuse/extend, fix a description, compose, or create. Create a learned **agent** only if Rule A1 is met and the role recurs across docs (rare).
-4. **Publish**: run `core/tools/publish.py` so new learned skills are discoverable.
-5. **Open a PR** with the diff. Keep the substantive change (`skills/`,`wiki/`,`agents/`) and the publish symlinks in separate commits. Every hunk must be traceable to the session-doc.
+4. **Publish**: run `core/tools/publish.py` so new learned skills are discoverable; it also regenerates the **Skills catalog** (`wiki/skills/index.md`) from skill frontmatter.
+5. **Verify (lint loop)**: run `core/tools/lint.py` (the checker — maker/checker separation). Fix what it flags, re-publish, and re-lint; repeat up to 3× before surfacing any residue in the PR.
+6. **Open a PR** with the diff. Keep the substantive change (`skills/`,`wiki/`,`agents/`,`scripts/tools/`) and the publish symlinks/catalog in separate commits. Every hunk must be traceable to the session-doc.
 
 > The pipeline skills live in `core/skills/maintainer/` (`task-analyser`, `wiki-writer`, `skill-writer`); `wiki-reader` is a **common** skill (`core/skills/common/`) shared by the SE agent and the injector. The judgment rules below are *applied by* these skills.
+
+## Reading `$CODE_BASE` — shallow by default, two file-scoped deep reads
+
+The injector stays **shallow** (work from the log and the wiki) to keep compiles cheap. It reads the live vscode code in **exactly two cases**, and then **only the specific file** involved — opening it via the `proof:` vscode link the log recorded, never crawling the subsystem or chasing imports:
+- **(T1) Conflict resolution** — a fact contradicts an existing wiki page; read the cited file to settle it. If unresolved, the **current code is authoritative** — update the wiki to match.
+- **(T2) Script authoring** — a skill's bundled script must call a vscode function; read the cited file to get its signature/imports/usage right.
+
+Record source anchors (`path:symbol:line`) so the read isn't repeated on recompile. `CODE_BASE`/`VSCODE_PYTHON` are in `settings.json`; `vscode` is an additional working directory.
 
 ## Fixing issues at the source
 
@@ -55,17 +64,19 @@ This is the inverse of Hebb's usual flow: when the compiled *output* is wrong, f
 
 **A1 — Skill vs. Agent.** Default to a *skill*. Promote to an *agent* only when, **and recurring across docs**, at least one holds: (a) the job needs its **own context window** (long-horizon / high intermediate-state / repeated over many items); (b) it needs a **different stance or tool-policy** than its caller (read-only explorer, propose-don't-execute, reviewer); (c) it's naturally **delegated** ("do it all, report back") rather than consulted ("tell me how"). **Size or amount-of-judgment alone never promotes** — skills carry judgment too.
 
-**A2 — Skill vs. Script.** A **script** is a deterministic transform (same inputs → same outputs, no runtime choice). A **skill** is a unit where *you must decide at runtime* using context that cannot be pre-baked. A skill may *call* scripts. Composition is by **prose + shared scripts**, not declared edges: if skill A needs skill B, A's body names B so the model loads it; if they share deterministic logic, bundle the script (duplicate it when two skills need it).
+**A2 — Skill vs. Script.** A **script** is a deterministic transform (same inputs → same outputs, no runtime choice). A **skill** is a unit where *you must decide at runtime* using context that cannot be pre-baked. A skill may *call* scripts. Composition is by **prose + shared scripts**, not declared edges: if skill A needs skill B, A's body names B so the model loads it. For shared deterministic logic, follow the **reusability ladder**: reuse the skill → compose a **thin skill on top** of a recurring chain (constituents stay alive and independently usable) → extract shared logic into the learned shared library `scripts/tools/<domain>/` and import it. Duplicate a bundled script only as a last resort, when sharing would couple skills that must stay independent.
 
-**A3 — The input contract (what a session-doc is).** Frontmatter has a `skills_used` list (one entry per skill invocation: the skill's stable `name` + a free-text `note` of what the agent *observed*). The body has five sections — *Task / What I did / Skills & scripts in play / What I learned / Friction & gaps* — and is **observations only**. The witness reports observables; *you* derive everything that needs judgment: each skill's outcome, *why* it fell short, and the domain/placement. "No skill fired" is a symptom the agent can report; deciding whether none existed vs. one existed but wasn't found is **your** job (search the skills).
+**A3 — The input contract (what a session-doc is).** Thin YAML frontmatter (`task`, `date`, a `skills_used` list — each entry the skill's stable `name` + a free-text `note` of what the agent *observed* — and an `interventions` count) over a **freeform, chronological body** that is **observations only**. The body is the source of truth; the frontmatter is a convenience index. Body entries are per-step blocks (`observed`; a `proof:` vscode repo link `path:line` for each code claim; the **full scratch script inline**, not a pointer; an `effort:` note of what the step took — never a run-count; `user input`) interleaved with **`[INTERVENTION]` entries** logged the moment a human steps in (`type`, `source`, `what was missing`). The witness reports observables; *you* derive everything that needs judgment: each skill's outcome, *why* it fell short, the domain/placement, and what capability would have prevented each intervention. "No skill fired" is a symptom the agent reports; deciding whether none existed vs. one existed but wasn't found is **your** job (search the skills).
 
 **A4 — Skill-handling (the heart).** When you spot a repeatable task, do **not** immediately create a skill. First **search existing skills** (you see every skill's name+description), then branch on *why* the existing one fell short:
 - **No similar skill** → create a new skill.
 - **Similar skill exists but was never picked up** → *discovery* problem. Fix its **description** (and/or `paths`), not its script.
 - **Similar skill picked up but fell short** → *capability* problem. Fix its **script or steps**.
-- **Covered by composition** (A+B together) → compose a thin skill, or an agent if A1 is met.
+- **Covered by composition** (A+B together, or a recurring chain) → compose a thin skill on top (constituents stay alive), or an agent if A1 is met.
 
-**A8 — Wiki access.** The wiki is read natively: an agent `Read`s the **top-level index** (`wiki/index.md`) and follows wikilinks. There is no query tool. So the wiki has **one** index page, at its root; every new page must be linked from it and from related pages. Domains (`wiki/<domain>/`) are just an organizing grouping you choose for the knowledge — they do **not** each get their own index.
+Author **every** skill reusable-by-default: a single clear capability declaring its **required vs. optional knowledge** (`knowledge_required:` / `knowledge_optional:` frontmatter linking the wiki pages it builds on), and split a small atomic capability into its **own small skill** when it's likely reusable by other tasks/systems later (the larger skill calls it; constituents stay alive).
+
+**A8 — Wiki access.** The wiki is read natively: an agent `Read`s the **top-level index** (`wiki/index.md`) and follows wikilinks. There is no query tool. So the wiki has **one** index page, at its root; every new page must be linked from it and from related pages. Domains (`wiki/<domain>/`) are just an organizing grouping you choose for the knowledge — they do **not** each get their own index. **One documented exception:** the **Skills catalog** at `wiki/skills/index.md` — a generated index page (written by `publish.py` from skill frontmatter) linked from the top-level index, forming the skills section of the knowledge graph.
 
 ## Running scripts against `$CODE_BASE` (the vscode repo)
 
@@ -79,5 +90,19 @@ PYTHONPATH="$CODE_BASE" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/X.py" "$@"
 ```
 `${CLAUDE_SKILL_DIR}` resolves to the running skill's own directory. The script file stays bundled in its skill; only the interpreter and import path come from the env vars.
 
+## The learning loop (reduce human intervention over time)
+
+Hebb is a **cross-task learning loop**: the wiki and skills are external memory that compounds while the model stays fixed. The canonical health metric is the **human-intervention rate** — if it doesn't fall over time, the loop isn't closing. Each `[INTERVENTION]` in a log is mined into a wiki/skill fix (the optimization target). Two bounded loops keep it closing, both capped at 3 iterations to avoid runaway cost; intervention rate is a **prioritization signal, not a target to game**:
+- **Self-correction (per compile):** the injector runs `core/tools/lint.py` after publish and loops fix→publish→lint until clean (maker/checker separation).
+- **Cross-doc sweep (on demand):** `core/tools/intervention_report.py` tabulates `[INTERVENTION]`s across *all* `inputs/`, reporting the rate over time and recurring gaps — a recurring intervention clears Rule A1's "recurs across docs" bar. Run it when prioritizing; it is **not** auto-scheduled (the human PR gate stays).
+
+## The knowledge↔skill graph
+
+The wiki and the skills are one linked graph. Skills declare `knowledge_required:` / `knowledge_optional:` (the wiki pages they build on); wiki pages name the skills that act on a concept (`name` + trigger, in `## Related skills`); `publish.py` renders the **Skills catalog** (`wiki/skills/index.md`) from skill frontmatter, and `lint.py` enforces the two-way symmetry. An agent following the wiki is expected to **load the named skill rather than improvise**.
+
+## Harness hooks
+
+Two project hooks live in `.claude/settings.json` alongside the bash-exec-policy gate: a **SessionStart** hook (`core/tools/inject_wiki_index.py`) injects `wiki/index.md` so every session starts knowing what's compiled; a non-blocking, sentinel-guarded **Stop** hook (`core/tools/log_cadence_check.py`) nudges an active SE session to keep its `inputs/` log current.
+
 ## Principles
-Compile once, maintain forever; query the artifact, not the raw sources. The agent witnesses; the maintainer judges. Promote with a high bar (knowledge → skill → agent; script → bundled → shared). When a *compiled* artifact (wiki page, skill) is wrong, fix its **generator**, not just the artifact. Keep it simple — PR review is the only gate.
+Compile once, maintain forever; query the artifact, not the raw sources. The agent witnesses; the maintainer judges. Promote with a high bar (knowledge → skill → agent; script → bundled → shared). When a *compiled* artifact (wiki page, skill) is wrong, fix its **generator**, not just the artifact. Every human intervention is a signal to compile away — the intervention rate falling over time is the system working. Author for reuse: required/optional knowledge, small composable skills, shared scripts. Keep it simple — PR review is the only gate.

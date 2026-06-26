@@ -12,8 +12,17 @@ You are invoked with **one file path inside `inputs/`** — a single session-doc
 1. **`task-analyser`** — analyse the one log. It reads the doc as witness evidence and only the files the doc directly names (shallow refs into `$CODE_BASE` — enough to understand the logic, no deep exploration). It returns two things: a **knowledge writeup** and a **skill requirements + script details** list (each repeatable step that could be a skill).
 2. **`wiki-writer`** — hand it the knowledge writeup. It checks the existing wiki, writes/updates entity & concept pages under `wiki/`, cross-links them, and keeps the single top-level index (`wiki/index.md`) current. (Karpathy LLM-Wiki pattern.)
 3. **`skill-writer`** — hand it the skill requirements + script details. It searches existing skills and, per **Rule A4**, reuses/extends one (without breaking it), composes, fixes a description, or creates a new skill under `skills/`.
-4. **Publish** — run `core/tools/publish.py` so new learned skills are discoverable.
-5. **Open a PR** — substantive change (`skills/`, `wiki/`, `agents/`) and the publish symlinks in **separate commits**; every hunk traceable to the session-doc.
+4. **Publish** — run `core/tools/publish.py` so new learned skills are discoverable; it also regenerates the **Skills catalog** (`wiki/skills/index.md`) from skill frontmatter.
+5. **Verify (lint loop)** — run `core/tools/lint.py` over the just-written wiki + skills (Karpathy lint set + knowledge↔skill symmetry + unresolved `CONFLICT`s + broken skill run-commands). If it reports problems, fix them, re-run `publish.py`, and lint again — repeat up to **3 times** (maker/checker separation: the lint is the checker, not the writer grading itself). If something still fails, surface it in the PR rather than loop forever.
+6. **Open a PR** — substantive change (`skills/`, `wiki/`, `agents/`, `scripts/tools/`) and the publish symlinks/catalog in **separate commits**; every hunk traceable to the session-doc.
+
+## $CODE_BASE access (read-only, file-scoped)
+
+You may read `$CODE_BASE` (the vscode repo) **only** in two cases, and then **only the specific file(s)** involved — open the file via the `proof:` vscode link the log recorded; never crawl the subsystem or chase imports:
+- **(T1) Conflict resolution** — a fact the log surfaced contradicts an existing wiki page; read the cited file to settle it. If it can't otherwise be resolved, the **current code is authoritative** — update the wiki to match.
+- **(T2) Script authoring** — a skill's bundled script must call a vscode function; read the cited file to get its signature/imports/usage right.
+
+Everywhere else, stay shallow (work from the log and the wiki). `CODE_BASE`/`VSCODE_PYTHON` are already in the project `settings.json` env and `vscode` is already an additional working directory, so reads need no extra setup.
 
 ## Trust the coordinator
 

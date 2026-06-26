@@ -23,11 +23,16 @@ core/                   # The engine — maintainer instructions, core skills, t
     hebb/               # Skills available to the SE agent (task-executer, log-appender, …)
     common/             # Shared skills (wiki-reader, used by both roles)
   tools/
-    publish.py          # Regenerates .claude/skills/ and .claude/agents/ symlinks
+    publish.py          # Regenerates .claude/ symlinks + the wiki Skills catalog
     bash_exec_policy.py # Gate: auto-allows bundled skill scripts, prompts others
+    lint.py             # Structural checker for the injector's self-correction loop
+    inject_wiki_index.py   # SessionStart hook: injects wiki/index.md as context
+    log_cadence_check.py   # Stop hook: nudges the SE agent to keep its log current
+    intervention_report.py # Cross-doc intervention tabulation + rate over time
 
 skills/                 # Compiled learned skills (output of skill-writer)
-wiki/                   # Compiled wiki pages (output of wiki-writer)
+scripts/tools/          # Learned shared script library (deterministic logic shared by skills)
+wiki/                   # Compiled wiki pages (output of wiki-writer); wiki/skills/index.md is the generated Skills catalog
 agents/                 # Compiled learned agents (rare)
 inputs/                 # Immutable witness logs from SE agent sessions
 .claude/                # Runtime symlinks into core/ and skills/ — don't hand-edit
@@ -42,13 +47,14 @@ inputs/                 # Immutable witness logs from SE agent sessions
 
 ## The compile loop
 
-1. The SE agent works on a task, appending observations to a session-doc in `inputs/` via `log-appender`.
+1. The SE agent works on a task, appending observations to a session-doc in `inputs/` via `log-appender` — each step carrying a `proof:` vscode link, the full scratch script inline, and an `effort:` note, plus an `[INTERVENTION]` entry every time a human steps in.
 2. The maintainer invokes the injector with that doc path.
-3. **`task-analyser`** reads the doc and emits a knowledge writeup + skill requirements.
-4. **`wiki-writer`** compiles the knowledge writeup into `wiki/` (checks existing pages first).
-5. **`skill-writer`** handles each skill requirement: reuse/extend/create per Rule A4.
-6. `core/tools/publish.py` regenerates the `.claude/` symlinks so new skills are discoverable.
-7. A PR is opened with the diff.
+3. **`task-analyser`** reads the doc, mines every intervention into a requirement, weights by effort, flags wiki/code conflicts, and emits a knowledge writeup + skill requirements.
+4. **`wiki-writer`** compiles the knowledge into `wiki/` (checks existing pages first), adds explicit loadable skill mentions + `## Related skills`, and reconciles conflicts against the live code (current code wins).
+5. **`skill-writer`** handles each skill requirement per Rule A4: reuse/extend/compose/create, reusable-by-default with required/optional knowledge, extracting shared logic to `scripts/tools/`.
+6. `core/tools/publish.py` regenerates the `.claude/` symlinks and the wiki Skills catalog.
+7. `core/tools/lint.py` runs as the checker; the injector loops fix→publish→lint until clean.
+8. A PR is opened with the diff.
 
 ## Environment variables (for skills that run against the codebase)
 

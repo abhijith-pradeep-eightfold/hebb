@@ -10,9 +10,10 @@ One decision per command, two jobs:
    file-writing redirect, command substitution, or `find -exec`/`-delete` — we
    allow it outright.
 
-2. Gate python by origin: a clean run of a skill-bundled script (under a
-   skills/ dir or ${CLAUDE_SKILL_DIR}, any nesting depth) -> allow; generated /
-   scratch python (/tmp, scratchpad, `-c`/`-m`, or chained/compound) -> ask.
+2. Gate python by origin: a clean run of a vetted Hebb script — a skill-bundled
+   script (under a skills/ dir or ${CLAUDE_SKILL_DIR}) or an engine tool under
+   core/tools/, any nesting depth -> allow; generated / scratch python (/tmp,
+   scratchpad, `-c`/`-m`, or chained/compound) -> ask.
 
 Anything else -> no opinion (normal permission flow). On any parse trouble we
 emit no decision, so the safe default (prompt) always wins. We only ever emit
@@ -28,6 +29,8 @@ import sys
 
 _PY_INTERP = re.compile(r"(^|/)python(3(\.\d+)?)?$")
 _SKILL_PATH = re.compile(r"(^|/)(\.claude/)?(core/)?skills/")
+# Engine tools live here; a clean run of one is a vetted maintainer artifact.
+_TOOLS_PATH = re.compile(r"(^|/)core/tools/")
 # Shell features that make a single python "allow" unsafe (chain/redirect/subst).
 _COMPLEX = re.compile(r"&&|\|\||[;|<>`]|\$\(")
 # Operator split into simple-commands (over-splitting only pushes toward `ask`).
@@ -85,9 +88,10 @@ def _python_verdict(clean, seg_tokens):
     if not script:
         return ("ask", "python with no script file — requires approval.")
     if "CLAUDE_SKILL_DIR" in script or (
-        _SKILL_PATH.search(script) and "/scratchpad/" not in script and not script.startswith("/tmp/")
+        (_SKILL_PATH.search(script) or _TOOLS_PATH.search(script))
+        and "/scratchpad/" not in script and not script.startswith("/tmp/")
     ):
-        return ("allow", "Skill-bundled python script (vetted maintainer artifact).")
+        return ("allow", "Vetted Hebb script (skill-bundled or core/tools engine tool).")
     return ("ask", "Generated/scratch python script — requires explicit approval.")
 
 
