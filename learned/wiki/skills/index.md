@@ -29,6 +29,11 @@ The capabilities compiled into Hebb. Each entry names a skill the way Claude Cod
 - **`task-analyser`** — Analyse a single Hebb session-doc (witness log) in inputs/ to extract the knowledge it surfaced and the skill opportunities it revealed. Reads the log and only the files/sources it directly names — shallow refs into $CODE_BASE just to understand the logic, never a deep exploration. Produces a knowledge writeup for wiki-writer and skill requirements + script details for skill-writer.
 - **`wiki-writer`** — File analysed knowledge into the Hebb wiki the way Karpathy's LLM-Wiki prescribes — check existing pages first, write or update entity and concept pages, cross-link them with wikilinks, and keep the single top-level index current. Use after task-analyser to compile a knowledge writeup into learned/wiki/.
 
+## processor
+
+- **`trace-processor-op`** — Trace a processor SMID to its root op and print the op chain that led to it. Use when a task gives you a SMID (processor_msg_id) and asks for its root processor op, its parent/lineage, or the chain of ops via processor_event_log — e.g. "what's the root op of SMID <uuid>", "trace this processor message to its origin", "which op dispatched this message". Walks processor_parent_msg_id up to the parentless root via the data warehouse.
+  - required knowledge: [[../../../wiki/processor/processor-event-log|processor_event_log table]], [[../../../wiki/processor/tracing-processor-op-lineage|Tracing processor-op lineage]]
+
 ## solr
 
 - **`solr-shard-cpu`** — Report the CPU utilization of a Solr shard end-to-end, in one step — given a collection name and shard ID, resolve every replica's EC2 host and pull each replica's CloudWatch CPU (Average + Maximum) against the alarm threshold. Use whenever a task asks for the CPU / utilization / load of a Solr shard starting from collection + shard number rather than an alarm or an InstanceId — e.g. "what is the CPU of positions shard 2", "CPU of profiles shard 21", "is user_calendar_events shard 0 hot", "check the load on positions shard 7". This is the one-call combination of solr-shard-dns-lookup → inspect-cloudwatch-cpu (no judgment between the steps). Use the individual skills instead when you need ONLY the hosts (solr-shard-dns-lookup) or ONLY a CPU curve from a PagerDuty alarm / known InstanceId (inspect-cloudwatch-cpu).
