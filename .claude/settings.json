@@ -51,6 +51,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/core/tools/publish.py\" >/dev/null",
+            "statusMessage": "Publishing Hebb skills (symlinks + catalog)"
+          },
+          {
+            "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/core/tools/inject_wiki_index.py\"",
             "statusMessage": "Injecting Hebb wiki index"
           }
