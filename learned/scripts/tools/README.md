@@ -1,4 +1,4 @@
-# Shared script library (`scripts/tools/`)
+# Shared script library (`learned/scripts/tools/`)
 
 Learned, domain-organized Python modules holding **deterministic logic shared by
 more than one skill** — extracted here instead of duplicated. This is a *learned
@@ -8,7 +8,7 @@ artifact* (maintained by the injector's `skill-writer`), distinct from
 ## Layout
 
 ```
-scripts/tools/<domain>/<module>.py
+learned/scripts/tools/<domain>/<module>.py
 ```
 
 Group by domain (e.g. `data_warehouse`, `solr`, `aws`). One concern per module.
@@ -24,13 +24,16 @@ policy (`core/tools/bash_exec_policy.py`) lets it run unattended:
 PYTHONPATH="$CODE_BASE" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/X.py" "$@"
 ```
 
-`X.py` then *imports* the shared module — adding the repo's `scripts/` to
-`sys.path` first so the import resolves without changing the run command:
+`X.py` then *imports* the shared module — walking up to the repo's
+`learned/scripts/` and putting it on `sys.path` first (no hardcoded nesting
+depth) so the import resolves without changing the run command:
 
 ```python
 import os, sys
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))), "scripts"))
+_d = os.path.dirname(os.path.realpath(__file__))
+while not os.path.isdir(os.path.join(_d, "scripts", "tools")):
+    _d = os.path.dirname(_d)
+sys.path.insert(0, os.path.join(_d, "scripts"))
 from tools.data_warehouse import helper
 ```
 

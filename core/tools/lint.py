@@ -12,7 +12,7 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-WIKI = os.path.join(ROOT, "wiki")
+WIKI = os.path.join(ROOT, "learned", "wiki")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from publish import parse_frontmatter, collect_skills  # noqa: E402
 
@@ -49,18 +49,18 @@ def lint():
                 continue  # pure intra-page anchor like [[#section]]
             resolved = by_key.get(tgt) or by_key.get(os.path.basename(tgt))
             if resolved is None:
-                problems.append(f"dangling wikilink [[{raw}]] in wiki/{rel}.md")
+                problems.append(f"dangling wikilink [[{raw}]] in learned/wiki/{rel}.md")
             else:
                 linked_to.add(resolved)
         if "UNRESOLVED-CONFLICT" in text:
-            problems.append(f"unresolved conflict marker in wiki/{rel}.md")
+            problems.append(f"unresolved conflict marker in learned/wiki/{rel}.md")
 
     for rel in pages:
         if rel != "index" and rel not in linked_to:
-            problems.append(f"orphan page wiki/{rel}.md (not linked from any page)")
+            problems.append(f"orphan page learned/wiki/{rel}.md (not linked from any page)")
 
     skill_dirs = {}
-    for root in (os.path.join(ROOT, "core", "skills"), os.path.join(ROOT, "skills")):
+    for root in (os.path.join(ROOT, "core", "skills"), os.path.join(ROOT, "learned", "skills")):
         skill_dirs.update(collect_skills(root))
     skill_names = set(skill_dirs)
 
@@ -100,12 +100,12 @@ def lint():
     for name, keys in skill_pages.items():
         for key in keys:
             if name not in page_skills.get(key, set()):
-                problems.append(f"asymmetry: skill '{name}' lists wiki/{key}.md but that page's "
+                problems.append(f"asymmetry: skill '{name}' lists learned/wiki/{key}.md but that page's "
                                 f"Related skills omits `{name}`")
     for rel, names in page_skills.items():
         for name in names:
             if rel not in skill_pages.get(name, set()):
-                problems.append(f"asymmetry: wiki/{rel}.md lists `{name}` but that skill's "
+                problems.append(f"asymmetry: learned/wiki/{rel}.md lists `{name}` but that skill's "
                                 f"knowledge_* omits this page")
     return problems
 

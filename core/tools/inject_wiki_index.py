@@ -10,7 +10,7 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-INDEX = os.path.join(ROOT, "wiki", "index.md")
+INDEX = os.path.join(ROOT, "learned", "wiki", "index.md")
 CAP = 10000  # SessionStart additionalContext is capped ~10k chars
 
 
@@ -25,7 +25,7 @@ def main():
     except OSError:
         return  # no index yet -> inject nothing
     if len(text) > CAP:
-        text = text[:CAP] + "\n\n[...truncated; Read wiki/index.md for the rest...]"
+        text = text[:CAP] + "\n\n[...truncated; Read learned/wiki/index.md for the rest...]"
     context = ("# Hebb wiki index (compiled knowledge)\n"
                "Consult these pages (and the Skills catalog they link) before re-deriving "
                "anything from source; follow the wikilinks.\n\n" + text)

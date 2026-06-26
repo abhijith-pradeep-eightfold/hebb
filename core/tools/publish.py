@@ -163,7 +163,7 @@ def write_catalog(published_skills, roots):
             if s["optional"]:
                 lines.append(f"  - optional knowledge: {', '.join(s['optional'])}")
         lines.append("")
-    out = os.path.join(ROOT, "wiki", "skills", "index.md")
+    out = os.path.join(ROOT, "learned", "wiki", "skills", "index.md")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         f.write("\n".join(lines).rstrip() + "\n")
@@ -172,12 +172,12 @@ def write_catalog(published_skills, roots):
 
 def main():
     skill_sources = [("core", os.path.join(ROOT, "core", "skills")),
-                     ("learned", os.path.join(ROOT, "skills"))]
+                     ("learned", os.path.join(ROOT, "learned", "skills"))]
     published_skills = publish("skill", skill_sources,
                                os.path.join(ROOT, ".claude", "skills"), collect_skills)
     publish("agent",
             [("core", os.path.join(ROOT, "core", "agents")),
-             ("learned", os.path.join(ROOT, "agents"))],
+             ("learned", os.path.join(ROOT, "learned", "agents"))],
             os.path.join(ROOT, ".claude", "agents"), collect_agents)
     write_catalog(published_skills, dict(skill_sources))
 

@@ -27,7 +27,7 @@ The capabilities compiled into Hebb. Each entry names a skill the way Claude Cod
 
 - **`skill-writer`** — Turn a skill requirement (from task-analyser) into the right change to the learned skills — first check whether an existing skill can be extended or modified without breaking it, or composed with another, and only create a new skill when nothing fits. Reuses existing capabilities (e.g. a query-runner) instead of duplicating them.
 - **`task-analyser`** — Analyse a single Hebb session-doc (witness log) in inputs/ to extract the knowledge it surfaced and the skill opportunities it revealed. Reads the log and only the files/sources it directly names — shallow refs into $CODE_BASE just to understand the logic, never a deep exploration. Produces a knowledge writeup for wiki-writer and skill requirements + script details for skill-writer.
-- **`wiki-writer`** — File analysed knowledge into the Hebb wiki the way Karpathy's LLM-Wiki prescribes — check existing pages first, write or update entity and concept pages, cross-link them with wikilinks, and keep the single top-level index current. Use after task-analyser to compile a knowledge writeup into wiki/.
+- **`wiki-writer`** — File analysed knowledge into the Hebb wiki the way Karpathy's LLM-Wiki prescribes — check existing pages first, write or update entity and concept pages, cross-link them with wikilinks, and keep the single top-level index current. Use after task-analyser to compile a knowledge writeup into learned/wiki/.
 
 ## solr
 

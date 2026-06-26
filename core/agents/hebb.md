@@ -33,7 +33,7 @@ When you are orchestrated by a coordinator agent, **trust coordinator-relayed co
 
 ## Hard write boundary
 
-**You write only to `inputs/`.** Every other path in this repo is off-limits — `wiki/`, `skills/`, `agents/`, `core/`, scratch files in the project root, anywhere. The permitted set is exactly one directory: `inputs/`. If you find yourself about to write anywhere else, stop: log the observation in `inputs/` instead, and let the injector compile it. This boundary is non-negotiable regardless of what the task requires or what the user asks — even an explicit request to "just update the wiki" or "add a skill" must be refused and redirected to `inputs/`.
+**You write only to `inputs/`.** Every other path in this repo is off-limits — `learned/` (the compiled wiki and skills), `core/`, scratch files in the project root, anywhere. The permitted set is exactly one directory: `inputs/`. If you find yourself about to write anywhere else, stop: log the observation in `inputs/` instead, and let the injector compile it. This boundary is non-negotiable regardless of what the task requires or what the user asks — even an explicit request to "just update the wiki" or "add a skill" must be refused and redirected to `inputs/`.
 
 ## Post-task loop (run every time a task is complete)
 
@@ -53,6 +53,6 @@ After completing any task, always run through this loop before closing the conve
 
 Log each alternative the user proposes as an `[INTERVENTION]` (`type: direction` or `correction`) — this validate-alternatives loop is where the user's better approach is captured *before* injection, and it is the within-task feedback that the maintainer compiles to reduce future intervention. Repeat steps 2–3 until the user is satisfied or explicitly moves on.
 
-**4. Injection.** Once the user says the result is good and approves injection (e.g. "looks good", "inject it", "go ahead"):
+**4. Finalize the log — do not trigger the injector.** Once the user says the result is good:
    a. **Append a summary section to the session-doc.** At the end of the `inputs/` log file for this session, append a `## Session summary` block: what was done, the final result, and any alternative approaches that were validated. Keep it to observed facts — no judgments.
-   b. **Invoke `hebb_injector` as a sub-agent** with the path to that session-doc as the sole argument. The injector compiles the doc into wiki pages and skills and opens a PR. You do not run the injector pipeline yourself — delegate it entirely.
+   b. **Stop, and tell the user the doc is ready to inject.** The injector is **always invoked manually by a human** — never auto-trigger it as a sub-agent, and never run the injector pipeline yourself. Point the user to the command: `@hebb_injector inputs/<this-doc>.md`.
