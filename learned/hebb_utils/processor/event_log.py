@@ -92,15 +92,21 @@ def fetch_rows_by_msg_id(smid, db_type=None, table=None, cols=DEFAULT_COLS):
     return run_select(q, db_type)
 
 
-def fetch_rows(processor_msg_id=None, processor_parent_msg_id=None, group_id=None,
-               operation0=None, since_hours=None, limit=200, cols=DEFAULT_COLS):
-    """Filtered read of processor_event_log. Filters are optional and AND-combined.
+# Timestamp literal (YYYY-MM-DD, optionally with HH:MM[:SS]) — safe to interpolate as a
+# t_create bound. And the columns allowed in a GROUP BY / count breakdown.
+_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?$")
+_GROUP_COLS = ("operation0", "group_id", "queue_name", "event_type", "status", "system_id")
 
-    Every interpolated value is charset-validated. At least one filter (or
-    ``since_hours``) is required so the scan stays bounded. Returns
-    ``{"db_type", "table", "rows": list[dict]}`` (rows newest-first, capped by ``limit``).
+
+def _where_clauses(processor_msg_id=None, processor_parent_msg_id=None, group_id=None,
+                   operation0=None, queue_name=None, event_type=None,
+                   since=None, until=None, since_hours=None):
+    """Build a validated, AND-combined list of WHERE clauses (read-only).
+
+    ``queue_name`` is matched on the **trimmed** column (the stored value may carry a
+    trailing space). ``since``/``until`` are absolute ``t_create`` bounds. Every
+    interpolated value is charset/format-validated (defense-in-depth — reads only).
     """
-    db_type, table = resolve_db_type_and_table()
     where = []
     for col, val in (("processor_msg_id", processor_msg_id),
                      ("processor_parent_msg_id", processor_parent_msg_id)):
@@ -108,20 +114,76 @@ def fetch_rows(processor_msg_id=None, processor_parent_msg_id=None, group_id=Non
             if not is_valid_smid(val):
                 raise ProcessorEventLogError(f"invalid {col}: {val!r} (expected UUID charset)")
             where.append(f"{col} = '{val}'")
-    for col, val in (("group_id", group_id), ("operation0", operation0)):
+    for col, val in (("group_id", group_id), ("operation0", operation0),
+                     ("event_type", event_type)):
         if val:
             if not _IDENT_RE.match(val):
                 raise ProcessorEventLogError(f"invalid {col}: {val!r}")
             where.append(f"{col} = '{val}'")
+    if queue_name:
+        if not _IDENT_RE.match(queue_name):
+            raise ProcessorEventLogError(f"invalid queue_name: {queue_name!r}")
+        where.append(f"TRIM(queue_name) = '{queue_name}'")
+    for sql_op, val in ((">=", since), ("<=", until)):
+        if val:
+            if not _TS_RE.match(val):
+                raise ProcessorEventLogError(
+                    f"invalid timestamp {val!r} (expected 'YYYY-MM-DD[ HH:MM[:SS]]')")
+            where.append(f"t_create {sql_op} '{val}'")
     if since_hours is not None:
         where.append(f"t_create >= DATE_SUB(NOW(), INTERVAL {int(since_hours)} HOUR)")
+    return where
+
+
+def fetch_rows(processor_msg_id=None, processor_parent_msg_id=None, group_id=None,
+               operation0=None, queue_name=None, event_type=None,
+               since=None, until=None, since_hours=None, limit=200, cols=DEFAULT_COLS):
+    """Filtered read of processor_event_log. Filters are optional and AND-combined.
+
+    Every interpolated value is charset-validated. At least one filter is required so
+    the scan stays bounded. ``queue_name`` matches the trimmed column; ``since``/``until``
+    are absolute ``t_create`` bounds ('YYYY-MM-DD[ HH:MM[:SS]]'). Returns
+    ``{"db_type", "table", "rows": list[dict]}`` (rows newest-first, capped by ``limit``).
+    """
+    db_type, table = resolve_db_type_and_table()
+    where = _where_clauses(processor_msg_id, processor_parent_msg_id, group_id,
+                           operation0, queue_name, event_type, since, until, since_hours)
     if not where:
         raise ProcessorEventLogError(
-            "at least one filter is required "
-            "(processor_msg_id, processor_parent_msg_id, group_id, operation0, or since_hours)")
+            "at least one filter is required (processor_msg_id, processor_parent_msg_id, "
+            "group_id, operation0, queue_name, event_type, since/until, or since_hours)")
     q = (f"SELECT {cols} FROM {table} WHERE {' AND '.join(where)} "
          f"ORDER BY t_create DESC LIMIT {int(limit)}")
     return {"db_type": db_type, "table": table, "rows": run_select(q, db_type)}
+
+
+def count_events(group_by, processor_parent_msg_id=None, group_id=None, operation0=None,
+                 queue_name=None, event_type=None, since=None, until=None,
+                 since_hours=None, limit=200):
+    """COUNT(*) breakdown of processor_event_log rows grouped by ``group_by`` columns.
+
+    ``group_by`` is a list from a fixed allowlist (operation0, group_id, queue_name,
+    event_type, status, system_id). Same validated filters as ``fetch_rows``; at least
+    one filter is required. Returns ``{"db_type", "table", "group_by", "rows"}`` with
+    rows = ``[{<group cols>, "cnt": N}, ...]`` ordered by count descending — the
+    "what flooded a queue" breakdown (e.g. group_by=[operation0, group_id]).
+    """
+    if not group_by:
+        raise ProcessorEventLogError("group_by must list at least one column")
+    bad = [c for c in group_by if c not in _GROUP_COLS]
+    if bad:
+        raise ProcessorEventLogError(
+            f"invalid group_by column(s): {bad!r} (allowed: {', '.join(_GROUP_COLS)})")
+    db_type, table = resolve_db_type_and_table()
+    where = _where_clauses(None, processor_parent_msg_id, group_id, operation0,
+                           queue_name, event_type, since, until, since_hours)
+    if not where:
+        raise ProcessorEventLogError("at least one filter is required for an aggregate read")
+    cols = ", ".join(group_by)
+    q = (f"SELECT {cols}, COUNT(*) AS cnt FROM {table} WHERE {' AND '.join(where)} "
+         f"GROUP BY {cols} ORDER BY cnt DESC LIMIT {int(limit)}")
+    return {"db_type": db_type, "table": table, "group_by": list(group_by),
+            "rows": run_select(q, db_type)}
 
 
 def hop_from_rows(smid, depth, rows):

@@ -1,9 +1,11 @@
 ---
-name: inspect-cloudwatch-cpu
-description: Pull a CloudWatch alarm definition and the underlying EC2 CPUUtilization timeseries via read-only AWS CLI, then tabulate the series and flag breach buckets. Use whenever you need to confirm or characterize a host-CPU alarm — a "Solr CPU Util Too High" PagerDuty page, an EC2 CPU spike, a CloudWatch alarm you want to verify against the real metric curve — to establish the true spike window and shape (sustained breach vs. one-minute blip) before correlating it to anything else. Reach for this whenever a task hands you a CloudWatch alarm name, an EC2 instance/host, or a PagerDuty CPU incident and asks what actually happened. Also use as the second step when you have already resolved DNS hostnames to InstanceIds (e.g. via solr-shard-dns-lookup) and want to pull the CPU curve — skip describe-alarms and go straight to get-metric-statistics.
+name: inspect-cloudwatch-metric
+description: Pull a CloudWatch alarm definition and its backing metric timeseries via read-only AWS CLI, then tabulate the series and flag breach buckets — for EC2 host CPU (`CPUUtilization`) or SQS queue depth (`AWS/SQS ApproximateNumberOfMessagesVisible`, including metric-math alarms). Use whenever you need to confirm or characterize an alarm against the real metric curve — a "Solr CPU Util Too High" PagerDuty page, an EC2 CPU spike, a "Queue backed up" page, or any CloudWatch alarm you want to verify — to establish the true spike window and shape (sustained breach vs. one-minute blip) before correlating it to anything else. Reach for this whenever a task hands you a CloudWatch alarm name, an EC2 instance/host, an SQS queue, or a PagerDuty CPU/queue incident and asks what actually happened. Also use as the second step when you have already resolved DNS hostnames to InstanceIds (e.g. via solr-shard-dns-lookup) and want to pull the CPU curve — skip describe-alarms and go straight to get-metric-statistics.
+knowledge_optional:
+  - "[[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]"
 ---
 
-# Inspect CloudWatch CPU alarm + EC2 metric
+# Inspect CloudWatch alarm + metric (CPU or queue depth)
 
 Confirm a host-CPU alarm against the real metric. The access facts and the alarm config live in the wiki ([[../../../wiki/infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]]); the runtime judgment this skill carries is **which alarm, which instance, and which window** to pull, and **reading the curve** (sustained breach vs. blip). The two AWS calls are read-only telemetry; the deterministic tabulation is a **bundled script** — `scripts/analyze_cpu_metrics.py` — that runs unattended on the saved JSON.
 
@@ -43,6 +45,14 @@ There are two ways to arrive at this skill:
 4. **Reading the analysis output.** `analyze_cpu_metrics.py` sorts the (unordered) AWS datapoints by timestamp, prints min/max/mean, counts buckets `>= --threshold`, and shows each contiguous high-CPU block tagged `SUSTAINED` (>=5 buckets, i.e. it would clear the alarm's 5-of-6 rule) or `blip`. `--threshold` defaults to 75 (the Solr alarm threshold); `--stat` defaults to `Average` (what the alarm evaluates). Tag each file with `--label` (repeatable, paired with the files in order). No `$CODE_BASE` import is involved — this is a pure transform over the JSON.
 
 5. **Resolve the timezone before correlating.** CloudWatch is **UTC**. If you go on to correlate against [[../../../wiki/data-warehouse/search-query-log|log.search_query_log]], note its `t_create` is stored in **IST** — shift the CPU window **+5:30** (or the SQL window **−5:30**) so both are on one clock. See [[../../../wiki/process/incident-metric-correlation|incident metric-correlation discipline]] and pair this skill with `query-starrocks` + `plot-result-set` for the overlay.
+
+## Queue-depth alarms (SQS "Queue backed up")
+
+For a [[../../../wiki/oncall/queue-backed-up|Queue backed up]] page the alarm is **metric-math** — top-level `MetricName`/`Namespace` are null, the real metric (`AWS/SQS ApproximateNumberOfMessagesVisible`) lives in the `Metrics` array. Pull the alarm threshold + the queue-depth curve and flag breach buckets in one **bundled, unattended** call:
+```bash
+PYTHONPATH="$CODE_BASE" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/pull_queue_depth.py" --queue <queue> --region <region> --start <ISO8601Z> --end <ISO8601Z>
+```
+It reads the alarm threshold (`describe-alarms`), pulls `Maximum`+`Average` per 900s bucket (`get-metric-statistics`), tabulates the curve, marks buckets at/over threshold with `<<<`, and reports the peak as a % of threshold. CloudWatch is **UTC**. Then attribute the backlog to an op/tenant with the **`query-processor-event-log`** skill (`--queue <queue> --event-type message_dispatched --count-by operation0,group_id`).
 
 ## Notes
 

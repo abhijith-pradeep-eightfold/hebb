@@ -2,6 +2,11 @@
 
 The compiled, interlinked knowledge base for the `EightfoldAI/vscode` (`www`) codebase. Start here and follow the wikilinks. Every page is reachable from this index.
 
+## Oncall
+
+- [[oncall/oncall-investigation|Oncall investigation — ticket types]] — the umbrella discipline for PagerDuty oncall tickets (read the alarm → characterize the metric → find the driver → trace & route to an owner), plus the catalog of ticket-type pages.
+- [[oncall/queue-backed-up|Queue backed up]] — the SQS queue-depth ticket type: the metric-math CloudWatch alarm (`AWS/SQS ApproximateNumberOfMessagesVisible`, ≥50k), pulling the spike curve, breaking `message_dispatched` down by `operation0`/`group_id`, tracing the root op, and routing to its owner.
+
 ## Data warehouse
 
 - [[data-warehouse/starrocks|StarRocks data warehouse]] — the OLAP analytics warehouse: region gating, Secrets-Manager credentials, runtime cluster-config resolution.
@@ -18,6 +23,7 @@ The compiled, interlinked knowledge base for the `EightfoldAI/vscode` (`www`) co
 
 - [[processor/processor-event-log|processor_event_log table]] — the per-message event log for SQS-driven processor ops: **SMID = `processor_msg_id`**, parent edge `processor_parent_msg_id`, op = `operation0` (`operations_list`); modelled by `ProcessorLogEvent` (logical db_type `REDSHIFT_LOG`, resolved per region by the adapter factory); the `get_processor_event_logs` helper's `group_id` requirement.
 - [[processor/tracing-processor-op-lineage|Tracing processor-op lineage]] — find a SMID's root processor op by walking `processor_parent_msg_id` to the parentless row; the dispatch mechanism (`_parent_msg_id`), and the `REROUTE_TO_HIGH_MEM` same-op two-hop reroute shape.
+- [[processor/op-registry|op_registry]] — the central map from a processor operation name (the `operation0` value) to its `(module_path, ClassName)`, i.e. the source file that defines the op.
 
 ## Infra / telemetry
 
@@ -26,6 +32,7 @@ The compiled, interlinked knowledge base for the `EightfoldAI/vscode` (`www`) co
 ## vscode repo / environment
 
 - [[vscode-repo/python-import-root|Python import root ($CODE_BASE/www)]] — why scripts that import `www` packages need `PYTHONPATH=$CODE_BASE/www`, not `$CODE_BASE`; also notes libraries available in the venv (matplotlib 3.10.0).
+- [[repo/codeowners-ownership|CODEOWNERS ownership resolution]] — resolve who owns a source file from `.github/CODEOWNERS` (last-matching-pattern-wins, no global default → unmatched files have no owner), the git-authorship fallback, and the org-team-read limitation on resolving `@org/team` handles to members.
 
 ## Process / agent discipline
 

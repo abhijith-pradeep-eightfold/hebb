@@ -17,6 +17,12 @@ You are the injector's analysis stage. Read **one** witness log in `inputs/` and
    - **`user input`** — directions the user gave.
    - **`[INTERVENTION]`** entries — a human had to step in; each has `type`, `source`, and `what was missing`.
 
+   **Classify the doc — oncall tickets are compiled per-type.** If the session-doc is an **oncall ticket** (a PagerDuty / CloudWatch-style alarm incident on a resource — a queue, host, collection, scheduled job, …), treat the **ticket type** as a first-class compiled unit and shape **both** hand-offs so that type ends up with a reusable **{KB page + skill(s) + script}** set the next responder loads instead of re-deriving:
+   - **Knowledge** → a KB page for the ticket type under the `oncall/` domain (the alarm + its backing metric, the metric-first investigation flow, and owner-routing), slotted into the oncall ticket-type catalog (`oncall/oncall-investigation`).
+   - **Skills/scripts** → the capabilities the flow needs at each step (pull/characterize the metric, break the load down by the causal dimension, trace to the root op, resolve ownership) — reuse or extend existing skills per A4, never duplicate, and promote any repeatable step's scratch script to a bundled script.
+   - **A high-level per-type runbook skill** → on top of the building blocks, require **one high-level composite skill for the ticket type** that names the execution flow (the constituent skills in order) and links the KB page — a thin orchestrator the responder loads to run the whole investigation in one place. Build it **even on the type's first occurrence** (the oncall carve-out to the usual thin-composite recurrence bar).
+   This is a standing rule: every oncall-type doc should leave the oncall catalog one entry richer — a KB page, its building-block skills, and one high-level runbook skill.
+
 2. **Extract knowledge.** Pull durable facts (mostly from `observed`): connections, which columns/symbols/paths matter, gotchas, env/runtime facts. For each fact, record the source anchor from its `proof:` link so `wiki-writer` can cite and verify. Confirm a shaky fact with a **shallow** look at the one file the `proof:` link names — never explore beyond it.
    - **Ephemeral state is not durable knowledge.** When the witness fetched live infrastructure state (topology, resource IDs, assignments), those specific values are not wiki facts — route the *method* of lookup to the knowledge writeup (so `wiki-writer` documents the API/command), and flag the step itself as a skill opportunity (a reusable lookup script).
 

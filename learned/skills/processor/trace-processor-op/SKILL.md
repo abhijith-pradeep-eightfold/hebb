@@ -4,6 +4,8 @@ description: Trace a processor SMID to its root op and print the op chain that l
 knowledge_required:
   - "[[../../../wiki/processor/processor-event-log|processor_event_log table]]"
   - "[[../../../wiki/processor/tracing-processor-op-lineage|Tracing processor-op lineage]]"
+knowledge_optional:
+  - "[[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]"
 ---
 
 # Trace a processor op to its root

@@ -1,6 +1,6 @@
 ---
 name: solr-shard-dns-lookup
-description: Look up the EC2 DNS hostnames and InstanceIds for all replicas of a Solr shard, given any collection name in SEARCH_INDEX_SETTINGS_REGISTRY (e.g. profiles, positions, user_calendar_events, user_login, courses, org_units, etc.) and a shard ID. Use this whenever a task identifies a Solr shard by collection + shard number but does not yet have a hostname or EC2 instance — e.g. "find the host for positions shard 7", "which EC2 instance serves user_calendar_events shard 0", "look up shard hosts from search_config", "get EC2 InstanceId for Solr shard N". This is the right first step before a CloudWatch CPU pull (use inspect-cloudwatch-cpu next) or any task that needs to locate the physical host behind a shard. Do NOT use when you already have a CloudWatch alarm name or an InstanceId — go straight to inspect-cloudwatch-cpu in that case.
+description: Look up the EC2 DNS hostnames and InstanceIds for all replicas of a Solr shard, given any collection name in SEARCH_INDEX_SETTINGS_REGISTRY (e.g. profiles, positions, user_calendar_events, user_login, courses, org_units, etc.) and a shard ID. Use this whenever a task identifies a Solr shard by collection + shard number but does not yet have a hostname or EC2 instance — e.g. "find the host for positions shard 7", "which EC2 instance serves user_calendar_events shard 0", "look up shard hosts from search_config", "get EC2 InstanceId for Solr shard N". This is the right first step before a CloudWatch CPU pull (use inspect-cloudwatch-metric next) or any task that needs to locate the physical host behind a shard. Do NOT use when you already have a CloudWatch alarm name or an InstanceId — go straight to inspect-cloudwatch-metric in that case.
 ---
 
 # Solr shard DNS lookup
@@ -13,7 +13,7 @@ Retrieve the live EC2 DNS hostnames and InstanceIds for every replica of a Solr 
 - You need to verify which shard IDs actually exist for a collection (shard numbering is not contiguous — always let the script enumerate the available IDs rather than assuming sequential numbering).
 - You are about to pull CloudWatch CPU for a specific shard but are starting from "collection + shard ID" rather than a PagerDuty alarm.
 
-If you already have a CloudWatch alarm name or an InstanceId, skip this skill and go directly to **`inspect-cloudwatch-cpu`**.
+If you already have a CloudWatch alarm name or an InstanceId, skip this skill and go directly to **`inspect-cloudwatch-metric`**.
 
 ## How the config key is determined
 
@@ -56,9 +56,9 @@ Include the collection, shard_id, and region so downstream steps have the full c
 
 ### 4. (Optional) Proceed to CloudWatch CPU pull
 
-If the goal is to check CPU utilization, hand the InstanceIds to **`inspect-cloudwatch-cpu`** (starting from its "already have InstanceIds" entry point — skip `describe-alarms`). See [[../../../wiki/infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]].
+If the goal is to check CPU utilization, hand the InstanceIds to **`inspect-cloudwatch-metric`** (starting from its "already have InstanceIds" entry point — skip `describe-alarms`). See [[../../../wiki/infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]].
 
-> If the task is simply **"the CPU of `<collection>` shard `<N>`"**, you don't need to run this skill and `inspect-cloudwatch-cpu` by hand — the combined **`solr-shard-cpu`** skill runs this lookup and the per-replica CPU pull in one call. This skill stays the right choice when you need only the hosts/InstanceIds.
+> If the task is simply **"the CPU of `<collection>` shard `<N>`"**, you don't need to run this skill and `inspect-cloudwatch-metric` by hand — the combined **`solr-shard-cpu`** skill runs this lookup and the per-replica CPU pull in one call. This skill stays the right choice when you need only the hosts/InstanceIds.
 
 ## Notes
 

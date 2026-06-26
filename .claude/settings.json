@@ -28,9 +28,22 @@
       "Bash(dirname:*)",
       "Bash(basename:*)",
       "Bash(which:*)",
-      "Read(//home/ec2-user/vscode/**)",
-      "Write(inputs/**)",
-      "Edit(inputs/**)"
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(sed:*)",
+      "Read(/home/ec2-user/vscode/**)",
+      "Write(./**)",
+      "Edit(./**)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push --force-with-lease:*)",
+      "Bash(git filter-branch:*)",
+      "Bash(git filter-repo:*)",
+      "Bash(git reflog expire:*)",
+      "Bash(git update-ref -d:*)",
+      "Bash(git branch -D:*)"
     ]
   },
   "hooks": {

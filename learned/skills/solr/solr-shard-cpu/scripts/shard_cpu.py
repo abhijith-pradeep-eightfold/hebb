@@ -2,7 +2,7 @@
 """Report the CPU utilization of a Solr shard, end-to-end, in one invocation.
 
 This is the bundled script for the `solr-shard-cpu` combined skill. It collapses
-the no-judgment chain `solr-shard-dns-lookup` -> `inspect-cloudwatch-cpu` into a
+the no-judgment chain `solr-shard-dns-lookup` -> `inspect-cloudwatch-metric` into a
 single pipeline the agent runs once:
 
     collection + shard-id  ->  replica DNS + InstanceIds  ->  per-replica CPU

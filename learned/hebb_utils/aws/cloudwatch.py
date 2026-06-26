@@ -1,7 +1,7 @@
 """Fetch and analyze EC2 `CPUUtilization` from CloudWatch.
 
 Deterministic shared logic (Rule A2) used by more than one skill:
-  - `inspect-cloudwatch-cpu` (its `analyze_cpu_metrics.py` imports the analysis half);
+  - `inspect-cloudwatch-metric` (its `analyze_cpu_metrics.py` imports the analysis half);
   - `solr-shard-cpu` (its `shard_cpu.py` imports both the fetch and the analysis halves).
 
 This module is itself www-free (it imports nothing from `$CODE_BASE`), but it lives

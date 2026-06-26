@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tabulate a CloudWatch `get-metric-statistics` CPUUtilization series and flag breach buckets.
 
-This is the deterministic analysis half of the `inspect-cloudwatch-cpu` skill.
+This is the deterministic analysis half of the `inspect-cloudwatch-metric` skill.
 The runtime judgment (which alarm, which window, which instance) lives in the
 skill body and is exercised by the AWS CLI calls the agent runs under user
 approval; *this* script is a pure transform over the JSON those calls saved, so

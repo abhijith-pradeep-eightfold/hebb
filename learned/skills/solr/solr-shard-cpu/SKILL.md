@@ -1,11 +1,11 @@
 ---
 name: solr-shard-cpu
-description: Report the CPU utilization of a Solr shard end-to-end, in one step — given a collection name and shard ID, resolve every replica's EC2 host and pull each replica's CloudWatch CPU (Average + Maximum) against the alarm threshold. Use whenever a task asks for the CPU / utilization / load of a Solr shard starting from collection + shard number rather than an alarm or an InstanceId — e.g. "what is the CPU of positions shard 2", "CPU of profiles shard 21", "is user_calendar_events shard 0 hot", "check the load on positions shard 7". This is the one-call combination of solr-shard-dns-lookup → inspect-cloudwatch-cpu (no judgment between the steps). Use the individual skills instead when you need ONLY the hosts (solr-shard-dns-lookup) or ONLY a CPU curve from a PagerDuty alarm / known InstanceId (inspect-cloudwatch-cpu).
+description: Report the CPU utilization of a Solr shard end-to-end, in one step — given a collection name and shard ID, resolve every replica's EC2 host and pull each replica's CloudWatch CPU (Average + Maximum) against the alarm threshold. Use whenever a task asks for the CPU / utilization / load of a Solr shard starting from collection + shard number rather than an alarm or an InstanceId — e.g. "what is the CPU of positions shard 2", "CPU of profiles shard 21", "is user_calendar_events shard 0 hot", "check the load on positions shard 7". This is the one-call combination of solr-shard-dns-lookup → inspect-cloudwatch-metric (no judgment between the steps). Use the individual skills instead when you need ONLY the hosts (solr-shard-dns-lookup) or ONLY a CPU curve from a PagerDuty alarm / known InstanceId (inspect-cloudwatch-metric).
 ---
 
 # Solr shard CPU (collection + shard → per-replica CPU)
 
-Answer "what is the CPU of `<collection>` shard `<N>`?" in a single invocation. This skill **collapses a no-judgment chain** — `solr-shard-dns-lookup` → `inspect-cloudwatch-cpu` — into one bundled script: the replica InstanceIds the lookup produces feed straight into the CloudWatch pull, with no decision in between, so the whole pipeline is one deterministic run.
+Answer "what is the CPU of `<collection>` shard `<N>`?" in a single invocation. This skill **collapses a no-judgment chain** — `solr-shard-dns-lookup` → `inspect-cloudwatch-metric` — into one bundled script: the replica InstanceIds the lookup produces feed straight into the CloudWatch pull, with no decision in between, so the whole pipeline is one deterministic run.
 
 The grounding facts live in the wiki — [[../../../wiki/solr/solr-collection-topology|Solr collection topology]] (a shard spans replica hosts; **its CPU is per-replica**) and [[../../../wiki/infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]] (the 75% Average alarm, the `InstanceId` dimension, UTC). The runtime judgment this skill carries is just **which collection, which shard, and which window**.
 
@@ -16,13 +16,13 @@ The grounding facts live in the wiki — [[../../../wiki/solr/solr-collection-to
 
 Use a **constituent** skill instead when the task is narrower (they stay independently usable):
 - only need the hosts/InstanceIds → **`solr-shard-dns-lookup`**;
-- already have a PagerDuty alarm name or an InstanceId, or want to characterize a known spike → **`inspect-cloudwatch-cpu`**.
+- already have a PagerDuty alarm name or an InstanceId, or want to characterize a known spike → **`inspect-cloudwatch-metric`**.
 
 ## How it works (one bundled script)
 
 `scripts/shard_cpu.py` runs the full pipeline, importing every stage **in-process** from the shared `hebb_utils` library:
 1. **Resolve replica hosts** via `hebb_utils.solr.shard_hosts` (the same `$CODE_BASE` config read the `solr-shard-dns-lookup` skill uses) and resolve each DNS host to an InstanceId via `hebb_utils.aws.ec2`. This stage imports vscode config, so the script runs with `PYTHONPATH=$CODE_BASE/www` (see [[../../../wiki/vscode-repo/python-import-root|Python import root]]).
-2. **Pull + analyze CPU** for each replica InstanceId via `hebb_utils.aws.cloudwatch` (the same analysis module the `inspect-cloudwatch-cpu` skill uses), reporting **Average** (the statistic the alarm evaluates) and **Maximum** (per-minute peaks), flagging any bucket at or above the threshold.
+2. **Pull + analyze CPU** for each replica InstanceId via `hebb_utils.aws.cloudwatch` (the same analysis module the `inspect-cloudwatch-metric` skill uses), reporting **Average** (the statistic the alarm evaluates) and **Maximum** (per-minute peaks), flagging any bucket at or above the threshold.
 
 The shared library is named `hebb_utils` (not `utils`) so it coexists with vscode's own top-level `utils` package on `sys.path` — letting the vscode-dependent host stage and the shared logic run in one process.
 
@@ -50,5 +50,5 @@ For each replica, present its Average (the alarm-comparable figure) and Maximum 
 ## Notes
 
 - **A shard's CPU is per-replica.** Two replicas can both be idle, or asymmetric; report each — see [[../../../wiki/solr/solr-collection-topology|topology]].
-- **Constituents stay alive.** This skill shares logic with `solr-shard-dns-lookup` and `inspect-cloudwatch-cpu` through the `hebb_utils` library (`hebb_utils.solr.shard_hosts`, `hebb_utils.aws.ec2`, `hebb_utils.aws.cloudwatch`); both skills remain usable on their own.
+- **Constituents stay alive.** This skill shares logic with `solr-shard-dns-lookup` and `inspect-cloudwatch-metric` through the `hebb_utils` library (`hebb_utils.solr.shard_hosts`, `hebb_utils.aws.ec2`, `hebb_utils.aws.cloudwatch`); both skills remain usable on their own.
 - **Reachability is only knowable by trying.** If the role can't read CloudWatch/EC2, the script reports the error per replica — report it plainly rather than guessing.

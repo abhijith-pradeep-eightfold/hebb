@@ -19,7 +19,7 @@ The authoritative column descriptions are the model's `get_column_description_fo
 |---|---|
 | `processor_msg_id` | **The SMID** — *"A unique id for processor message from SQS"* (`:230`). A UUID; selective enough to query on by itself. |
 | `processor_parent_msg_id` | *"processor_msg_id of the parent of the current message"* (`:231`) — the **edge to the parent op**; see [[tracing-processor-op-lineage|tracing processor-op lineage]]. |
-| `operation0` | The op of the row — first op in the list; set as `operations[0] if operations else None` (`:186`). |
+| `operation0` | The op of the row — first op in the list; set as `operations[0] if operations else None` (`:186`). Resolve the op name to its source file via [[op-registry]]. |
 | `operations_list` | Comma-joined full op list (`:187`). |
 | `event_type` | Lifecycle event. Model documents `message_dispatched` / `message_received` / `message_processed` (`:218`); live data also shows **`message_fetched`**. |
 | `status` | Per-op outcome, populated on the `message_processed` row. Model documents `PASS` / `FAIL` (`:223`); live data also shows reroute markers such as **`REROUTE_TO_HIGH_MEM`** (see [[tracing-processor-op-lineage#the-high-mem-reroute|the high-mem reroute]]). |
@@ -30,7 +30,7 @@ The authoritative column descriptions are the model's `get_column_description_fo
 | `latency_milliseconds` | Op latency; `message_processed` only (`:232`). |
 | `memory_usage_bytes` | RSS at processing; `message_processed` only (`:225`). |
 | `msg_retry_count` | SQS `ApproximateReceiveCount` (`:224`, set at `:191`). |
-| `t_create` | Row event timestamp. |
+| `t_create` | Row event timestamp. **Timezone is unconfirmed for this table** — pin it with a warehouse `NOW()` sanity row before correlating against another source. (One incident *inferred* UTC by aligning trace timestamps to a CloudWatch/UTC curve, but with no sanity-row check; note that the IST claim on the incident metric-correlation page is for `search_query_log`, a different table.) |
 | `system_id`, `cluster_type`, `git_revision`, `hostname` | system id; cluster (`spot`/`on_demand`/`canary`/dev) `:234`; git revision `:233`; machine IP `:228`. |
 
 ## Built-in accessor (and its limitation)
@@ -53,6 +53,8 @@ Importing `db.base_log_event` and `cloud_interfaces.datawarehouse` requires `PYT
 ## Related
 
 - [[tracing-processor-op-lineage|Tracing processor-op lineage]] — how to walk `processor_parent_msg_id` to the root op.
+- [[op-registry|op_registry]] — map an `operation0` value to the source file that defines the op.
+- [[../oncall/queue-backed-up|Queue backed up (oncall)]] — breaks `message_dispatched` down by `operation0`/`group_id` to find what flooded a queue.
 - [[../data-warehouse/datawarehouse-adapter-factory|DataWarehouseAdapterFactory]] — resolves `REDSHIFT_LOG` to the region's physical warehouse.
 - [[../data-warehouse/querying-starrocks|Querying StarRocks]] — the `starrocks_utils` read path (this table uses the adapter-factory `dwh.get_list` path instead).
 - [[../vscode-repo/python-import-root|Python import root]] — `PYTHONPATH=$CODE_BASE/www` for these `www`-rooted imports.
