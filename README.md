@@ -33,7 +33,7 @@ core/                   # The engine — maintainer instructions, core skills, t
 learned/                # Compiled output of the engine
   skills/               # Learned skills (output of skill-writer)
   wiki/                 # Wiki pages (output of wiki-writer); learned/wiki/skills/index.md is the generated Skills catalog
-  scripts/tools/        # Shared script library (deterministic logic shared by skills)
+  utils/                # Shared utilities (deterministic logic shared by skills)
   agents/               # Learned agents — created on demand (rare)
 inputs/                 # Immutable witness logs from SE agent sessions
 .claude/                # Runtime symlinks into core/ and learned/ — don't hand-edit
@@ -52,7 +52,7 @@ inputs/                 # Immutable witness logs from SE agent sessions
 2. A human invokes the injector **manually** with that doc path (the SE agent never auto-triggers it).
 3. **`task-analyser`** reads the doc, mines every intervention into a requirement, weights by effort, flags wiki/code conflicts, and emits a knowledge writeup + skill requirements.
 4. **`wiki-writer`** compiles the knowledge into `learned/wiki/` (checks existing pages first), adds explicit loadable skill mentions + `## Related skills`, and reconciles conflicts against the live code (current code wins).
-5. **`skill-writer`** handles each skill requirement per Rule A4: reuse/extend/compose/create, reusable-by-default with required/optional knowledge, extracting shared logic to `learned/scripts/tools/`.
+5. **`skill-writer`** handles each skill requirement per Rule A4: reuse/extend/compose/create, reusable-by-default with required/optional knowledge, extracting shared logic to `learned/utils/`.
 6. `core/tools/publish.py` regenerates the `.claude/` symlinks and the wiki Skills catalog.
 7. `core/tools/lint.py` runs as the checker; the injector loops fix→publish→lint until clean.
 8. The injector then **stops and reports**; it opens a PR only when you ask (never automatically).
