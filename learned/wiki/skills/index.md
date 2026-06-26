@@ -31,6 +31,8 @@ The capabilities compiled into Hebb. Each entry names a skill the way Claude Cod
 
 ## processor
 
+- **`query-processor-event-log`** — Read rows from the processor_event_log warehouse table by filter — processor_msg_id (SMID), processor_parent_msg_id, group_id, operation0, and/or a recent time window. Use when a task asks to look at processor op events / SQS processor messages: "show the events for SMID <uuid>", "what ops ran for group X in the last 6h", "find children of this message", "did operation Y pass or fail", "list message_processed rows for tenant Z". For walking a SMID all the way to its ROOT op use trace-processor-op instead; for arbitrary StarRocks SQL use query-starrocks.
+  - required knowledge: [[../../../wiki/processor/processor-event-log|processor_event_log table]]
 - **`trace-processor-op`** — Trace a processor SMID to its root op and print the op chain that led to it. Use when a task gives you a SMID (processor_msg_id) and asks for its root processor op, its parent/lineage, or the chain of ops via processor_event_log — e.g. "what's the root op of SMID <uuid>", "trace this processor message to its origin", "which op dispatched this message". Walks processor_parent_msg_id up to the parentless root via the data warehouse.
   - required knowledge: [[../../../wiki/processor/processor-event-log|processor_event_log table]], [[../../../wiki/processor/tracing-processor-op-lineage|Tracing processor-op lineage]]
 
