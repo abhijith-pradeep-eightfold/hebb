@@ -39,13 +39,15 @@ The injector is invoked with **one session-doc path** in `inputs/` and processes
 
 > The pipeline skills live in `core/skills/maintainer/` (`task-analyser`, `wiki-writer`, `skill-writer`); `wiki-reader` is a **common** skill (`core/skills/common/`) shared by the SE agent and the injector. The judgment rules below are *applied by* these skills.
 
-## Reading `$CODE_BASE` — shallow by default, two file-scoped deep reads
+## Reading `$CODE_BASE` — the injector stays shallow (the SE agent does not)
 
-The injector stays **shallow** (work from the log and the wiki) to keep compiles cheap. It reads the live vscode code in **exactly two cases**, and then **only the specific file** involved — opening it via the `proof:` vscode link the log recorded, never crawling the subsystem or chasing imports:
+This scoping is for the **injector** (the maintainer's compile pass), **not** the SE agent. The injector stays **shallow** (work from the log and the wiki) to keep compiles cheap. It reads the live vscode code in **exactly two cases**, and then **only the specific file** involved — opening it via the `proof:` vscode link the log recorded, never crawling the subsystem or chasing imports:
 - **(T1) Conflict resolution** — a fact contradicts an existing wiki page; read the cited file to settle it. If unresolved, the **current code is authoritative** — update the wiki to match.
 - **(T2) Script authoring** — a skill's bundled script must call a vscode function; read the cited file to get its signature/imports/usage right.
 
 Record source anchors (`path:symbol:line`) so the read isn't repeated on recompile. `CODE_BASE`/`VSCODE_PYTHON` are in `settings.json`; `vscode` is an additional working directory.
+
+> **The `hebb` SE agent is not bound by this.** It does real engineering work against vscode (via `task-executer`) and reads the live code **freely whenever the wiki doesn't cover what it needs or a skill wasn't enough** — that fallback is its normal mode, not a restricted deep read. The two-trigger limit applies only to the injector's compile pass.
 
 ## Fixing issues at the source
 
