@@ -48,6 +48,7 @@ Importing `db.base_log_event` and `cloud_interfaces.datawarehouse` requires `PYT
 ## Related skills
 
 - `trace-processor-op` — use it to find the root processor op of a SMID and print the `processor_parent_msg_id` chain from target up to root.
+- `query-processor-event-log` — use it for single filtered reads of this table (by `processor_msg_id`, `processor_parent_msg_id`, `group_id`, `operation0`, or a recent time window).
 
 ## Related
 

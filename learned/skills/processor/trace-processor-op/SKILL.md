@@ -10,6 +10,8 @@ knowledge_required:
 
 Given a **SMID** (`processor_msg_id`), find the **root processor op** and the op chain to reach it by walking the `processor_parent_msg_id` edge up the dispatch tree in [[../../../wiki/processor/processor-event-log|processor_event_log]] until a row has no parent. The domain facts (columns, the parent edge, the high-mem reroute shape, why the model's own `get_processor_event_logs` helper doesn't fit a bare SMID) live in the wiki — see [[../../../wiki/processor/tracing-processor-op-lineage|tracing processor-op lineage]]. The walk itself is deterministic, so it is a **bundled, read-only script**; because it is anchored under the skill dir, the bash execution policy (`core/tools/bash_exec_policy.py`) auto-allows it — it runs **without an approval prompt** every time (this is exactly the scratch-script approval that a bundled skill removes).
 
+The reusable "read processor_event_log" logic (warehouse resolution, row fetch, the parent-chain walk) lives in the shared util `hebb_utils.processor.event_log`, so the sibling `query-processor-event-log` skill shares the same implementation; this script is a thin CLI over `walk_parent_chain`.
+
 ## Steps
 
 1. **Read the grounding wiki pages** (via `wiki-reader`): [[../../../wiki/processor/processor-event-log|processor_event_log]] (what the columns mean, the `REDSHIFT_LOG`→region-warehouse routing) and [[../../../wiki/processor/tracing-processor-op-lineage|tracing processor-op lineage]] (the walk, the reroute shape). You usually don't need anything else — the script handles table/warehouse resolution.
@@ -30,4 +32,4 @@ Given a **SMID** (`processor_msg_id`), find the **root processor op** and the op
 
 - **Bare SMID only is enough** — `processor_msg_id` is a selective UUID, so no `group_id` or time window is needed. This is why the model's built-in `ProcessorLogEvent.get_processor_event_logs` (which hard-filters on `group_id`) is not used here; the script queries `processor_msg_id` directly.
 - The query is slow against the warehouse (tens of seconds per hop via the StarRocks "Hodor" client) but chains are typically shallow.
-- Read-only by construction: the script never executes arbitrary SQL and `dwh.get_list` is a read path. To run general read-only warehouse queries instead, use the `query-starrocks` skill.
+- Read-only by construction: the script never executes arbitrary SQL and `dwh.get_list` is a read path. For **single filtered reads** of `processor_event_log` (by SMID, parent, group, op, or time window) rather than a full walk-to-root, use the `query-processor-event-log` skill; for general read-only warehouse SQL, use the `query-starrocks` skill.
