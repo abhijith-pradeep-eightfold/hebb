@@ -10,10 +10,12 @@ One decision per command, two jobs:
    file-writing redirect, command substitution, or `find -exec`/`-delete` — we
    allow it outright.
 
-2. Gate python by origin: a clean run of a vetted Hebb script — a skill-bundled
+2. Gate python by origin: a run of a vetted Hebb script — a skill-bundled
    script (under a skills/ dir or ${CLAUDE_SKILL_DIR}) or an engine tool under
-   core/tools/, any nesting depth -> allow; generated / scratch python (/tmp,
-   scratchpad, `-c`/`-m`, or chained/compound) -> ask.
+   core/tools/, any nesting depth -> allow. A chained/compound command is allowed
+   too **when every segment is trusted** (a vetted python script or a read-only
+   tool) and there's no file redirect or command substitution. Generated / scratch
+   python (/tmp, scratchpad, `-c`/`-m`, or any untrusted segment) -> ask.
 
 Anything else -> no opinion (normal permission flow). On any parse trouble we
 emit no decision, so the safe default (prompt) always wins. We only ever emit
@@ -31,8 +33,6 @@ _PY_INTERP = re.compile(r"(^|/)python(3(\.\d+)?)?$")
 _SKILL_PATH = re.compile(r"(^|/)(\.claude/)?(core/)?skills/")
 # Engine tools live here; a clean run of one is a vetted maintainer artifact.
 _TOOLS_PATH = re.compile(r"(^|/)core/tools/")
-# Shell features that make a single python "allow" unsafe (chain/redirect/subst).
-_COMPLEX = re.compile(r"&&|\|\||[;|<>`]|\$\(")
 # Operator split into simple-commands (over-splitting only pushes toward `ask`).
 _SPLIT = re.compile(r"&&|\|\||[;|&\n]")
 
@@ -77,22 +77,36 @@ def _seg_tokens(seg):
     return parts[i:] or None
 
 
-def _python_verdict(clean, seg_tokens):
-    if _COMPLEX.search(clean) or len(seg_tokens) != 1:
-        return ("ask", "Chained/compound python command — requires explicit approval.")
-    args = seg_tokens[0][1:]
+def _trusted_python(args):
+    """True if a python arg list runs a vetted Hebb script (not -c/-m, not scratch)."""
     if any(a in ("-c", "-m") for a in args):
-        return ("ask", "Inline python (-c/-m) — generated code, requires approval.")
+        return False
     script = next((a for a in args if a.endswith(".py")), None) \
         or next((a for a in args if not a.startswith("-")), None)
     if not script:
-        return ("ask", "python with no script file — requires approval.")
-    if "CLAUDE_SKILL_DIR" in script or (
+        return False
+    return "CLAUDE_SKILL_DIR" in script or (
         (_SKILL_PATH.search(script) or _TOOLS_PATH.search(script))
         and "/scratchpad/" not in script and not script.startswith("/tmp/")
-    ):
-        return ("allow", "Vetted Hebb script (skill-bundled or core/tools engine tool).")
-    return ("ask", "Generated/scratch python script — requires explicit approval.")
+    )
+
+
+def _python_verdict(clean, seg_tokens):
+    # A real file redirect (after harmless 2>&1 / /dev/null stripping) is unsafe;
+    # command substitution was already screened out in classify().
+    if re.search(r"[<>]", clean):
+        return ("ask", "python command with a file redirect — requires approval.")
+    # Allow even a chain, as long as EVERY segment is trusted: a vetted python
+    # script, or a read-only inspection tool. One untrusted segment -> ask.
+    for toks in seg_tokens:
+        if _is_interp(toks[0]):
+            if not _trusted_python(toks[1:]):
+                return ("ask", "Untrusted/scratch python in the command — requires approval.")
+        else:
+            name = toks[0].rsplit("/", 1)[-1]
+            if name not in _READONLY or (name == "find" and any(a in _FIND_EXEC for a in toks)):
+                return ("ask", "A non-trusted command is chained with python — requires approval.")
+    return ("allow", "All chained commands are vetted Hebb scripts / read-only tools.")
 
 
 def _readonly_ok(clean, seg_tokens):
