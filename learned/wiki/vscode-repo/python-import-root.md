@@ -19,7 +19,9 @@ PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" your_script.py
 
 ## Relation to the env contract
 
-The two env vars are `CODE_BASE` (repo root, `/home/ec2-user/vscode`) and `VSCODE_PYTHON` (the interpreter whose venv holds the deps). The general guidance says "run with the repo root on `PYTHONPATH`" — but for these `www`-rooted packages the correct root is `$CODE_BASE/www`. Use `$CODE_BASE/www` whenever the script imports `datawarehouse`, `db`, or other `www`-level packages.
+The two env vars are `CODE_BASE` (repo root, `/home/ec2-user/vscode`) and `VSCODE_PYTHON` (the interpreter whose venv holds the deps). The general guidance says "run with the repo root on `PYTHONPATH`" — but for these `www`-rooted packages the correct root is `$CODE_BASE/www`. Use `$CODE_BASE/www` whenever the script imports `datawarehouse`, `db`, `cloud_interfaces`, or other `www`-level packages.
+
+(Second confirming instance: a processor-trace script importing `db.base_log_event` and `cloud_interfaces.datawarehouse` first failed under `PYTHONPATH=$CODE_BASE` with `ModuleNotFoundError: No module named 'db'`, then succeeded under `$CODE_BASE/www` — `inputs/2026-06-26-smid-processor-trace.md`.)
 
 ## Installed in the venv
 

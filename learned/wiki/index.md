@@ -14,6 +14,11 @@ The compiled, interlinked knowledge base for the `EightfoldAI/vscode` (`www`) co
 - [[solr/solr-collection-topology|Solr collection topology]] — collection / shard / replica / host: how a "Solr CPU Util Too High" alarm names one host, which hosts a shard spans, and the `query` (read, load-balanced) vs. `update/json/docs` (write, fan-out) traffic semantics.
 - [[solr/solr-shard-dns-lookup|Solr shard DNS lookup via search_config]] — look up replica EC2 DNS hostnames for any collection + shard ID from `search_config` via `SEARCH_INDEX_SETTINGS_REGISTRY`; how `hosts_key` is derived per collection; profiles/positions special-cased, all others use `{tablename}_shard_hosts`; shard IDs are non-contiguous; includes DNS → InstanceId resolution for CloudWatch.
 
+## Processor
+
+- [[processor/processor-event-log|processor_event_log table]] — the per-message event log for SQS-driven processor ops: **SMID = `processor_msg_id`**, parent edge `processor_parent_msg_id`, op = `operation0` (`operations_list`); modelled by `ProcessorLogEvent` (logical db_type `REDSHIFT_LOG`, resolved per region by the adapter factory); the `get_processor_event_logs` helper's `group_id` requirement.
+- [[processor/tracing-processor-op-lineage|Tracing processor-op lineage]] — find a SMID's root processor op by walking `processor_parent_msg_id` to the parentless row; the dispatch mechanism (`_parent_msg_id`), and the `REROUTE_TO_HIGH_MEM` same-op two-hop reroute shape.
+
 ## Infra / telemetry
 
 - [[infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]] — pull a CloudWatch alarm definition and the underlying EC2 `CPUUtilization` timeseries via read-only AWS CLI; alarm config (75% Average, 5-of-6 300s), `InstanceId` dimension, CloudWatch is UTC.

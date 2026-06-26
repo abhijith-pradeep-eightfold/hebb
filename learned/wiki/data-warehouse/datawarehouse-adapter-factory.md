@@ -21,10 +21,15 @@ So StarRocks is opt-in per region (gated by both [[starrocks#region-gating|regio
 
 Anonymous/background jobs are not allowed to use StarRocks (comment + guard at `datawarehouse.py:35`).
 
+## Logical db_type overrides
+
+A model can declare a *logical* db_type that this factory resolves to a physical warehouse at runtime via `dwh.get_db_type_override(<logical>.value)`. For example [[../processor/processor-event-log|processor_event_log]] (`ProcessorLogEvent`) declares `DBType.REDSHIFT_LOG` and was observed resolving to **starrocks** in a StarRocks region — the same one-logical-table/many-warehouses routing as [[search-query-log|log.search_query_log]].
+
 ## Related
 
 - [[starrocks|StarRocks data warehouse]] — the warehouse this factory may select.
 - [[search-query-log|log.search_query_log table]] — one logical table defined in all three warehouses.
+- [[../processor/processor-event-log|processor_event_log table]] — another logical table (`REDSHIFT_LOG`) routed by this factory.
 - [[querying-starrocks|Querying StarRocks]] — the direct `starrocks_utils` path (used when StarRocks is the chosen warehouse).
 
 ---
