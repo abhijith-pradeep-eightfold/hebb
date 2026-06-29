@@ -6,6 +6,7 @@ The compiled, interlinked knowledge base for the `EightfoldAI/vscode` (`www`) co
 
 - [[oncall/oncall-investigation|Oncall investigation — ticket types]] — the umbrella discipline for PagerDuty oncall tickets (read the alarm → characterize the metric → find the driver → trace & route to an owner), plus the catalog of ticket-type pages.
 - [[oncall/queue-backed-up|Queue backed up]] — the SQS queue-depth ticket type: the metric-math CloudWatch alarm (`AWS/SQS ApproximateNumberOfMessagesVisible`, ≥50k), pulling the spike curve, then the **inflow-vs-drain fork** (depth is a stock = ∫(inflow−drain)) — the inflow branch (direct composition + correct distinct-parent attribution → trace root op → route owner) and the drain branch (op errors, processing latency, worker-pool contention, volume×latency).
+- [[oncall/solr-cpu-high|Solr CPU too high]] — the Solr-replica host-CPU ticket type: the `CPUUtilization` 75%/5-of-6 alarm, characterizing the spike per-replica (`solr-shard-cpu`), then the **indexing-vs-query split** (CPU is a flow metric = indexing + query work; `callerid='index'` vs all other callerids) — the rate-metric analog of the queue-depth fork — then the `callerid × group_id × env` driver breakdown, and the `sequence_message_id` bridge from a query surge back to its root **processor** op and owner.
 
 ## Data warehouse
 

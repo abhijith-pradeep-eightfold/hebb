@@ -14,6 +14,7 @@ knowledge_required:
 knowledge_optional:
   - "[[../../../wiki/processor/op-registry|op_registry: operation name → source file]]"
   - "[[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]"
+  - "[[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]"
 ---
 
 # Resolve the owner of a file or processor op

@@ -10,6 +10,9 @@ The capabilities compiled into Hebb. Each entry names a skill the way Claude Cod
 
 ## data-warehouse
 
+- **`query-solr-load`** — Indexing-vs-query load breakdown for one Solr core+shard from log.search_query_log — the per-bucket indexing (callerid='index') vs query split, and the per-source callerid×group_id×env driver breakdown (spike window vs baseline, normalized per-minute). Use when diagnosing what drove a Solr replica's load or CPU beyond "is it hot": "did indexing or query traffic rise on profiles shard 21", "split index vs query per 15 min for this core+shard", "which callerid/tenant/env surged on positions shard 7 during the spike", "what feature or service doubled the query rate", or "is this caller new in the spike window". The analytical core of a "Solr CPU too high" oncall. Pairs with solr-shard-cpu (overlay the load split on the per-replica CPU curve) and trace-processor-op (when the surging env is `processor`, trace a culprit sequence_message_id to its root op). For arbitrary StarRocks SQL use query-starrocks; for processor-queue throughput use query-queue-throughput.
+  - required knowledge: [[../../../wiki/data-warehouse/search-query-log|log.search_query_log table]]
+  - optional knowledge: [[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]
 - **`query-starrocks`** — Run a read-only query against the StarRocks data warehouse (e.g. log.search_query_log) from the vscode repo. Use when a task asks to count, aggregate, or read rows from StarRocks / the data warehouse — it points you at the StarRocks access pattern and the correct import root so you don't re-derive them.
 
 ## hebb
@@ -21,8 +24,8 @@ The capabilities compiled into Hebb. Each entry names a skill the way Claude Cod
 
 ## infra
 
-- **`inspect-cloudwatch-metric`** — Pull a CloudWatch alarm definition and its backing metric timeseries via read-only AWS CLI, then tabulate the series and flag breach buckets — for EC2 host CPU (`CPUUtilization`) or SQS queue depth (`AWS/SQS ApproximateNumberOfMessagesVisible`, including metric-math alarms). Use whenever you need to confirm or characterize an alarm against the real metric curve — a "Solr CPU Util Too High" PagerDuty page, an EC2 CPU spike, a "Queue backed up" page, or any CloudWatch alarm you want to verify — to establish the true spike window and shape (sustained breach vs. one-minute blip) before correlating it to anything else. Reach for this whenever a task hands you a CloudWatch alarm name, an EC2 instance/host, an SQS queue, or a PagerDuty CPU/queue incident and asks what actually happened. Also use as the second step when you have already resolved DNS hostnames to InstanceIds (e.g. via solr-shard-dns-lookup) and want to pull the CPU curve — skip describe-alarms and go straight to get-metric-statistics.
-  - optional knowledge: [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]
+- **`inspect-cloudwatch-metric`** — Pull a CloudWatch alarm definition and its backing metric timeseries via read-only AWS CLI, then tabulate the series and flag breach buckets — for EC2 host CPU (`CPUUtilization`) or SQS queue depth (`AWS/SQS ApproximateNumberOfMessagesVisible`, including metric-math alarms). Use whenever you need to confirm or characterize an alarm against the real metric curve — a "Solr CPU Util Too High" PagerDuty page, an EC2 CPU spike, a "Queue backed up" page, or any CloudWatch alarm you want to verify — to establish the true spike window and shape (sustained breach vs. one-minute blip) before correlating it to anything else. Reach for this whenever a task hands you a CloudWatch alarm name, an EC2 instance/host, an SQS queue, or a PagerDuty CPU/queue incident and asks what actually happened. Also use as the second step when you have already resolved DNS hostnames to InstanceIds (e.g. via solr-shard-dns-lookup) and want to pull the CPU curve — skip describe-alarms and go straight to get-metric-statistics. It can also pull the alarm's **state-transition history** to answer "is this page chronic or rare" — the most recent trigger (this incident's onset), the prior trigger, and the gap between them — for any CloudWatch alarm (CPU, queue depth, etc.).
+  - optional knowledge: [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]], [[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]
 
 ## maintainer
 
@@ -34,9 +37,12 @@ The capabilities compiled into Hebb. Each entry names a skill the way Claude Cod
 
 - **`oncall-post-report`** — Post a finished oncall investigation report back to the PagerDuty Slack thread — create a Slack Canvas with the full table-structured report and reply with a concise summary in the alert thread. Use as the final step of any oncall ticket (queue backed up, Solr CPU too high, etc.) once the investigation is done and the user asks to "post the report in Slack" / "share this in the PD thread" / "post to the oncall channel". Encodes two safety rules every outward-facing oncall post must follow: confirm the destination/surface before posting, and render every person/team/customer reference as plain text (never an @-mention) so the post pages no one.
   - required knowledge: [[../../../wiki/oncall/oncall-investigation|Oncall investigation — ticket types]]
-  - optional knowledge: [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]
+  - optional knowledge: [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]], [[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]
 - **`oncall-queue-backed-up`** — High-level oncall runbook for a "Queue backed up" (SQS queue-depth) PagerDuty page. Use when you pick up a "[<region>] Queue backed up-<queue>" alarm and want the end-to-end investigation, not just one step — confirm and characterize the queue-depth spike, find which operation0/group flooded the queue, trace it to its root processor op, and route to the owning team. Sequences inspect-cloudwatch-metric → query-processor-event-log → trace-processor-op → codeowners-owner. Reach for this whenever an SQS queue-backed-up / queue-depth alarm pages.
   - required knowledge: [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]
+  - optional knowledge: [[../../../wiki/oncall/oncall-investigation|Oncall investigation — ticket types]]
+- **`oncall-solr-cpu-high`** — High-level oncall runbook for a "Solr CPU Util Too High" PagerDuty page (an EC2 host-CPU alarm on a Solr replica). Use when you pick up a "[<region>] P1 Solr CPU Util Too High on <collection> shard <N> replica <R>" alarm and want the end-to-end investigation, not just one step — characterize the CPU spike per-replica, split the load into indexing vs query to find which stream rose, break that stream down by callerid/group_id/env to find the source, trace any processor-issued surge to its root op, and route to the owning team. Sequences solr-shard-cpu → inspect-cloudwatch-metric → query-solr-load → trace-processor-op → codeowners-owner → oncall-post-report. Reach for this whenever a Solr-CPU / Solr host-load alarm pages.
+  - required knowledge: [[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]
   - optional knowledge: [[../../../wiki/oncall/oncall-investigation|Oncall investigation — ticket types]]
 
 ## processor
@@ -52,17 +58,18 @@ The capabilities compiled into Hebb. Each entry names a skill the way Claude Cod
   - optional knowledge: [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]
 - **`trace-processor-op`** — Trace a processor SMID to its root op and print the op chain that led to it. Use when a task gives you a SMID (processor_msg_id) and asks for its root processor op, its parent/lineage, or the chain of ops via processor_event_log — e.g. "what's the root op of SMID <uuid>", "trace this processor message to its origin", "which op dispatched this message". Walks processor_parent_msg_id up to the parentless root via the data warehouse.
   - required knowledge: [[../../../wiki/processor/processor-event-log|processor_event_log table]], [[../../../wiki/processor/tracing-processor-op-lineage|Tracing processor-op lineage]]
-  - optional knowledge: [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]
+  - optional knowledge: [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]], [[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]
 
 ## repo
 
 - **`codeowners-owner`** — >-
   - required knowledge: [[../../../wiki/repo/codeowners-ownership|CODEOWNERS ownership resolution]]
-  - optional knowledge: [[../../../wiki/processor/op-registry|op_registry: operation name → source file]], [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]
+  - optional knowledge: [[../../../wiki/processor/op-registry|op_registry: operation name → source file]], [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]], [[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]
 
 ## solr
 
 - **`solr-shard-cpu`** — Report the CPU utilization of a Solr shard end-to-end, in one step — given a collection name and shard ID, resolve every replica's EC2 host and pull each replica's CloudWatch CPU (Average + Maximum) against the alarm threshold. Use whenever a task asks for the CPU / utilization / load of a Solr shard starting from collection + shard number rather than an alarm or an InstanceId — e.g. "what is the CPU of positions shard 2", "CPU of profiles shard 21", "is user_calendar_events shard 0 hot", "check the load on positions shard 7". By default it prints an aggregate (min/mean/max + breach blocks) for every replica; pass --per-bucket for a one-row-per-period table (e.g. "hourly/per-bucket CPU table for profiles shard 21", "24h CPU by hour") and --replica N to report just one replica ("CPU of positions shard 2 replica 0"). This is the one-call combination of solr-shard-dns-lookup → inspect-cloudwatch-metric (no judgment between the steps). Use the individual skills instead when you need ONLY the hosts (solr-shard-dns-lookup) or ONLY a CPU curve from a PagerDuty alarm / known InstanceId (inspect-cloudwatch-metric).
+  - optional knowledge: [[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]
 - **`solr-shard-dns-lookup`** — Look up the EC2 DNS hostnames and InstanceIds for all replicas of a Solr shard, given any collection name in SEARCH_INDEX_SETTINGS_REGISTRY (e.g. profiles, positions, user_calendar_events, user_login, courses, org_units, etc.) and a shard ID. Use this whenever a task identifies a Solr shard by collection + shard number but does not yet have a hostname or EC2 instance — e.g. "find the host for positions shard 7", "which EC2 instance serves user_calendar_events shard 0", "look up shard hosts from search_config", "get EC2 InstanceId for Solr shard N". This is the right first step before a CloudWatch CPU pull (use inspect-cloudwatch-metric next) or any task that needs to locate the physical host behind a shard. Do NOT use when you already have a CloudWatch alarm name or an InstanceId — go straight to inspect-cloudwatch-metric in that case.
 
 ## viz

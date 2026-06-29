@@ -6,6 +6,7 @@ knowledge_required:
   - "[[../../../wiki/oncall/oncall-investigation|Oncall investigation — ticket types]]"
 knowledge_optional:
   - "[[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]"
+  - "[[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]"
 ---
 
 # Post an oncall report to Slack

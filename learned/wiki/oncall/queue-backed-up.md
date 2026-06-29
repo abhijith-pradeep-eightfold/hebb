@@ -127,6 +127,7 @@ Report an oncall ticket as a **detailed, table-structured report**, not a prose 
 ## Related
 
 - [[oncall-investigation|Oncall investigation — ticket types]] — the umbrella discipline.
+- [[solr-cpu-high|Solr CPU too high]] — the sibling ticket type; its indexing-vs-query split is the **flow-metric** analog of this page's inflow-vs-drain fork (depth is a *stock*, CPU is a *rate*).
 - [[../processor/processor-event-log|processor_event_log]] · [[../processor/tracing-processor-op-lineage|tracing processor-op lineage]] — the event log and the parent-walk.
 - [[../processor/queue-worker-pool-segregation|Processor worker-pool / queue-group segregation]] — which queues share a worker pool (drain-branch contention check).
 - [[../processor/trigger-event-fanout|trigger_event fan-out]] — the interceptor re-seed + write_back retry mechanisms behind the witnessed storm.

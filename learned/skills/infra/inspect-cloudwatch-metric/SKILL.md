@@ -1,9 +1,10 @@
 ---
 name: inspect-cloudwatch-metric
 model: sonnet
-description: Pull a CloudWatch alarm definition and its backing metric timeseries via read-only AWS CLI, then tabulate the series and flag breach buckets — for EC2 host CPU (`CPUUtilization`) or SQS queue depth (`AWS/SQS ApproximateNumberOfMessagesVisible`, including metric-math alarms). Use whenever you need to confirm or characterize an alarm against the real metric curve — a "Solr CPU Util Too High" PagerDuty page, an EC2 CPU spike, a "Queue backed up" page, or any CloudWatch alarm you want to verify — to establish the true spike window and shape (sustained breach vs. one-minute blip) before correlating it to anything else. Reach for this whenever a task hands you a CloudWatch alarm name, an EC2 instance/host, an SQS queue, or a PagerDuty CPU/queue incident and asks what actually happened. Also use as the second step when you have already resolved DNS hostnames to InstanceIds (e.g. via solr-shard-dns-lookup) and want to pull the CPU curve — skip describe-alarms and go straight to get-metric-statistics.
+description: Pull a CloudWatch alarm definition and its backing metric timeseries via read-only AWS CLI, then tabulate the series and flag breach buckets — for EC2 host CPU (`CPUUtilization`) or SQS queue depth (`AWS/SQS ApproximateNumberOfMessagesVisible`, including metric-math alarms). Use whenever you need to confirm or characterize an alarm against the real metric curve — a "Solr CPU Util Too High" PagerDuty page, an EC2 CPU spike, a "Queue backed up" page, or any CloudWatch alarm you want to verify — to establish the true spike window and shape (sustained breach vs. one-minute blip) before correlating it to anything else. Reach for this whenever a task hands you a CloudWatch alarm name, an EC2 instance/host, an SQS queue, or a PagerDuty CPU/queue incident and asks what actually happened. Also use as the second step when you have already resolved DNS hostnames to InstanceIds (e.g. via solr-shard-dns-lookup) and want to pull the CPU curve — skip describe-alarms and go straight to get-metric-statistics. It can also pull the alarm's **state-transition history** to answer "is this page chronic or rare" — the most recent trigger (this incident's onset), the prior trigger, and the gap between them — for any CloudWatch alarm (CPU, queue depth, etc.).
 knowledge_optional:
   - "[[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]"
+  - "[[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]"
 ---
 
 # Inspect CloudWatch alarm + metric (CPU or queue depth)
@@ -46,6 +47,14 @@ There are two ways to arrive at this skill:
 4. **Reading the analysis output.** `analyze_cpu_metrics.py` sorts the (unordered) AWS datapoints by timestamp, prints min/max/mean, counts buckets `>= --threshold`, and shows each contiguous high-CPU block tagged `SUSTAINED` (>=5 buckets, i.e. it would clear the alarm's 5-of-6 rule) or `blip`. `--threshold` defaults to 75 (the Solr alarm threshold); `--stat` defaults to `Average` (what the alarm evaluates). Tag each file with `--label` (repeatable, paired with the files in order). No `$CODE_BASE` import is involved — this is a pure transform over the JSON.
 
 5. **Resolve the timezone before correlating.** CloudWatch is **UTC**, and `log.search_query_log.t_create` (and the other `log.*` tables) are also stored in **UTC** — same clock, no shift needed. See [[../../../wiki/process/incident-metric-correlation|incident metric-correlation discipline]] and pair this skill with `query-starrocks` + `plot-result-set` for the overlay.
+
+## Alarm history — is this page chronic or rare?
+
+Beyond the *current* breach, an oncall often needs to know whether the alarm pages constantly or almost never — a first trigger in months points at a discrete in-window event, while a frequent flapper points at a trend or a misconfigured threshold. Pull the alarm's **state-transition history** (the transitions *into* ALARM = the trigger events) and summarize the most recent trigger, the prior trigger, and the gap — one **bundled, unattended** call:
+```bash
+"$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/pull_alarm_history.py" --alarm-name "<exact alarm name>" --region <region>
+```
+It reads `describe-alarm-history` (`StateUpdate` items), reports the trigger timestamps newest-first, and computes the gap since the prior trigger. No `$CODE_BASE` import — pure AWS read + transform. **Caveat:** CloudWatch retains alarm history for **~14 days**, so a prior trigger older than that will *not* appear — if only this incident's trigger shows, the alarm may still have a much older prior page; confirm the longer history via PagerDuty. Pass the **exact** alarm name (from the page, or from the `describe-alarms` output in Step 2).
 
 ## Queue-depth alarms (SQS "Queue backed up")
 

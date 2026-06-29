@@ -15,7 +15,7 @@ Anchor on the real metric first, then correlate — the general method is [[../p
 ## Ticket types
 
 - **Queue backed up** (SQS queue-depth alarm) → [[queue-backed-up|Queue backed up]].
-- **Solr CPU too high** (EC2 host-CPU alarm) → covered by [[../infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm]] + the [[../process/incident-metric-correlation|metric-correlation discipline]] (and the `solr-shard-cpu` skill).
+- **Solr CPU too high** (EC2 host-CPU alarm on a Solr replica) → [[solr-cpu-high|Solr CPU too high]].
 
 New ticket types are added here as their incidents are compiled — each as its own page with the alarm, the flow, and the automating skills/scripts.
 
@@ -42,6 +42,7 @@ The `oncall-post-report` skill encodes both rules; **use it** to create a Canvas
 ## Related skills
 
 - `oncall-queue-backed-up` — the high-level runbook skill for the *Queue backed up* ticket type (each ticket type has one such per-type runbook skill).
+- `oncall-solr-cpu-high` — the high-level runbook skill for the *Solr CPU too high* ticket type (characterize the CPU spike → split indexing vs query → break down the drivers → trace any processor source → route).
 - `oncall-post-report` — use it to post the finished table-structured report back to the PagerDuty Slack thread (Canvas + concise threaded reply), with a confirm-before-post gate and plain-text (non-paging) references. Applies to every ticket type.
 
 ## Related

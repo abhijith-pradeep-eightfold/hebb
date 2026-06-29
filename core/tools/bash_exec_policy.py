@@ -37,6 +37,9 @@ _SKILL_PATH = re.compile(r"(^|/)(\.claude/)?(core/)?skills/")
 _TOOLS_PATH = re.compile(r"(^|/)core/tools/")
 # Operator split into simple-commands (over-splitting only pushes toward `ask`).
 _SPLIT = re.compile(r"&&|\|\||[;|&\n]")
+# A backslash-newline is a line continuation (joins one logical command), not a
+# command separator — collapse it before _SPLIT sees the bare newline.
+_LINE_CONT = re.compile(r"\\\r?\n")
 
 # Genuinely read-only inspection tools. Deliberately excludes anything that can
 # write (sed/awk/tee) or run another program given as an argument
@@ -147,6 +150,9 @@ def classify(cmd):
     """('allow'|'ask', reason) for a command we have a policy on, else None."""
     if "`" in cmd or "$(" in cmd:
         return None  # command substitution could run anything -> stay silent
+    # Join shell line continuations so a `\`-wrapped single command (common for
+    # long skill invocations) isn't fragmented when we split on bare newlines.
+    cmd = _LINE_CONT.sub(" ", cmd)
     # Strip harmless 2>&1 / >/dev/null FIRST, so the bare `&` in `2>&1` is never
     # mistaken for a command separator when we split into simple-commands.
     clean = _SAFE_REDIR.sub(" ", cmd)

@@ -7,6 +7,7 @@ knowledge_required:
   - "[[../../../wiki/processor/tracing-processor-op-lineage|Tracing processor-op lineage]]"
 knowledge_optional:
   - "[[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]"
+  - "[[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]"
 ---
 
 # Trace a processor op to its root
