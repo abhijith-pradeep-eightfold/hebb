@@ -29,7 +29,7 @@ Time-bucketed and breakdown aggregates of [[../../../wiki/processor/processor-ev
      ```bash
      PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/query_queue_throughput.py" --queue index_requests --mode parents --since "2026-06-23 15:00:00" --until "2026-06-23 18:30:00" --parent-since "2026-06-23 13:00:00" --parent-until "2026-06-23 19:10:00"
      ```
-   `--format json` emits machine-readable rows (the `rates`/`latency` timeseries feed the `plot-result-set` skill directly).
+   `--format json` emits machine-readable rows (the `rates`/`latency` timeseries feed the `plot-result-set` skill directly). **`--region <region>`** — sets `EF_DEFAULT_REGION` for this invocation; valid regions: `us-west-2`, `eu-central-1`, `ca-central-1`, `ap-southeast-2`, `westus2` (Azure/Databricks). When unset, `EF_DEFAULT_REGION` from the environment is used.
 
 3. **Read the output.** `rates`: backlog-building buckets have `net_delta > 0`, draining buckets `< 0` — the sign flip locates onset/decay. `latency`: a drain trough coinciding with a p90 spike is the throttle; the top `total_proc_sec` op/tenant is the capacity hog. `parents`: the top `distinct_msgs` op is the true driver to trace (`trace-processor-op`) and route (`codeowners-owner`).
 

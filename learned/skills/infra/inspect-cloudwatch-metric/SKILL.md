@@ -68,3 +68,4 @@ It reads the alarm threshold (`describe-alarms`), pulls `Maximum`+`Average` per 
 
 - **Reachability is only knowable by trying.** Env inspection (AWS CLI present, `AWS_PROFILE`/region set) cannot tell you whether the role holds `cloudwatch:DescribeAlarms`/`GetMetricData`. Make the read and report plainly if it is denied, rather than guessing.
 - **One alarm = one EC2 instance.** The metric dimension is the `InstanceId`, not the hostname; the alarm definition is where you get it.
+- **Region fallback for bundled scripts.** `pull_alarm_history.py` and `pull_queue_depth.py` resolve the AWS region in this order: `--region` arg → `AWS_DEFAULT_REGION` env var → `EF_DEFAULT_REGION` env var → `us-west-2`. Always pass `--region` explicitly for non-default regions. AWS-specific services (CloudWatch, EC2, SQS) are not available for Azure-format regions such as `westus2`.

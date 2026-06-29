@@ -69,25 +69,33 @@ def main(argv=None):
     ap.add_argument("--parent-until", help="parents mode: outer parent-window upper bound")
     ap.add_argument("--limit", type=int, default=200, help="max rows (default 200)")
     ap.add_argument("--format", choices=("human", "json"), default="human")
+    ap.add_argument("--region", default=None,
+                    help="Region for warehouse routing. Overrides EF_DEFAULT_REGION "
+                         "for this invocation (e.g. us-west-2, eu-central-1, "
+                         "ca-central-1, ap-southeast-2, westus2). When unset, "
+                         "EF_DEFAULT_REGION from the environment is used.")
     args = ap.parse_args(argv)
 
     if args.mode == "rates":
         result = event_log.throughput_timeseries(
             args.queue, args.since, args.until,
-            bucket_minutes=args.bucket_minutes if args.bucket_minutes is not None else 15)
+            bucket_minutes=args.bucket_minutes if args.bucket_minutes is not None else 15,
+            region=args.region)
         cols = ["bucket", "dispatched_in", "processed_out", "net_delta"]
     elif args.mode == "latency":
         by = [c.strip() for c in (args.by or "").split(",") if c.strip()]
         result = event_log.latency_breakdown(
             args.queue, args.since, args.until,
             bucket_minutes=args.bucket_minutes, by=by,
-            operation0=args.operation, group_id=args.group_id, limit=args.limit)
+            operation0=args.operation, group_id=args.group_id, limit=args.limit,
+            region=args.region)
         cols = (["bucket"] if args.bucket_minutes is not None else []) + by + \
                ["processed_out", "p50_ms", "p90_ms", "total_proc_sec"]
     else:  # parents
         result = event_log.parent_attribution(
             args.queue, args.since, args.until,
-            parent_since=args.parent_since, parent_until=args.parent_until, limit=args.limit)
+            parent_since=args.parent_since, parent_until=args.parent_until, limit=args.limit,
+            region=args.region)
         cols = ["operation0", "distinct_msgs"]
 
     if args.format == "json":

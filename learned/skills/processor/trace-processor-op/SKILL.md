@@ -26,7 +26,7 @@ The reusable "read processor_event_log" logic (warehouse resolution, row fetch, 
    ```
    - **`PYTHONPATH="$CODE_BASE/www"`**, not `$CODE_BASE`: the script imports `db.base_log_event` and `cloud_interfaces.datawarehouse`, which are `www`-rooted — see [[../../../wiki/vscode-repo/python-import-root|Python import root]]. (`$CODE_BASE` alone fails with `ModuleNotFoundError: No module named 'db'`.)
    - The script resolves the table and physical warehouse from the model itself (`ProcessorLogEvent` → `DBType.REDSHIFT_LOG` → `dwh.get_db_type_override` → e.g. StarRocks `log.processor_event_log`) and reads via `dwh.get_list` — the [[../../../wiki/data-warehouse/datawarehouse-adapter-factory|adapter-factory]] read path, not `starrocks_utils`. Nothing is hardcoded per region.
-   - It only issues `SELECT`s it builds itself and validates the SMID is UUID-charset before interpolating. Flags: `--max-depth N` (cycle/length cap, default 50), `--format json` (machine-readable hops).
+   - It only issues `SELECT`s it builds itself and validates the SMID is UUID-charset before interpolating. Flags: `--max-depth N` (cycle/length cap, default 50), `--format json` (machine-readable hops), **`--region <region>`** (sets `EF_DEFAULT_REGION`; valid: `us-west-2`, `eu-central-1`, `ca-central-1`, `ap-southeast-2`, `westus2`; defaults to `EF_DEFAULT_REGION` from the environment).
 
 3. **Read the output.** It prints each hop (target → root), then the **root op** (`operation0` of the parentless row) and the **root→target op trace**. A `NO ROW FOUND` note means the chain reached a SMID with no row in the table (e.g. aged out of the retained partitions).
 
