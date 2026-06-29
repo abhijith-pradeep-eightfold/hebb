@@ -20,8 +20,15 @@
 
 All warehouse table timestamps — `log.search_query_log.t_create`, `processor_event_log.t_create`, and the other `log.*` tables — are stored in **UTC**, and CloudWatch metric/alarm times are **UTC**. So the metric and warehouse sources share one clock: overlay them directly, no shift. A CPU spike at 08:20–08:35 UTC is matched against `t_create` literals `08:20–08:35` directly.
 
+## Stock vs flow metrics
+
+Some alarm metrics are a **flow** (a rate — CPU%, queries/min) and some are a **stock** (a level that accumulates — a queue's `ApproximateNumberOfMessagesVisible`, a disk-fill, a backlog). For a **stock metric the correlation must overlay both sides of the integral**, because the level is `∫(inflow − drain)`: a single "candidate cause" timeseries is not enough. Bucket and overlay **inflow** *and* **drain** over the window + baseline, and compare their **net delta** per bucket against the stock curve.
+
+The non-correlation rule sharpens here: if **inflow is flat** while the stock spikes, that is the finding — it redirects you from the producer to the **drain side** (slower/fewer consumers, higher per-item latency, capacity contention). In the 2026-06-23 `index_requests` backup the inflow rate was flat (~55–94k/15min) across the whole window while depth doubled the threshold; the net-delta buckets matched the depth curve exactly and pinned the cause to a drain dip, not a producer surge. See [[../oncall/queue-backed-up#depth-is-a-stock-fork-on-inflow-vs-drain|Queue backed up → inflow vs drain]] for the worked queue-depth application (and the corollary that a storm's dispatch spike can land on the *upstream* queue, leaving the backed-up queue's own inflow flat). Both inflow and drain come from [[../processor/processor-event-log|processor_event_log]] `t_create` (UTC) — same clock as the CloudWatch stock curve, overlay directly.
+
 ## Related
 
+- [[../oncall/queue-backed-up|Queue backed up (oncall)]] — the stock-metric (queue-depth) worked example: inflow-vs-drain fork and the drain-side diagnostics.
 - [[../infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + metric access]] — pulling and confirming the primary metric.
 - [[../solr/solr-collection-topology|Solr collection topology]] — what the alarm coordinate means; which hosts a shard spans.
 - [[../data-warehouse/search-query-log|log.search_query_log table]] — the secondary source; `t_create` timezone and the scoping columns used to break down load.

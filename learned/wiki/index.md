@@ -5,7 +5,7 @@ The compiled, interlinked knowledge base for the `EightfoldAI/vscode` (`www`) co
 ## Oncall
 
 - [[oncall/oncall-investigation|Oncall investigation — ticket types]] — the umbrella discipline for PagerDuty oncall tickets (read the alarm → characterize the metric → find the driver → trace & route to an owner), plus the catalog of ticket-type pages.
-- [[oncall/queue-backed-up|Queue backed up]] — the SQS queue-depth ticket type: the metric-math CloudWatch alarm (`AWS/SQS ApproximateNumberOfMessagesVisible`, ≥50k), pulling the spike curve, breaking `message_dispatched` down by `operation0`/`group_id`, tracing the root op, and routing to its owner.
+- [[oncall/queue-backed-up|Queue backed up]] — the SQS queue-depth ticket type: the metric-math CloudWatch alarm (`AWS/SQS ApproximateNumberOfMessagesVisible`, ≥50k), pulling the spike curve, then the **inflow-vs-drain fork** (depth is a stock = ∫(inflow−drain)) — the inflow branch (direct composition + correct distinct-parent attribution → trace root op → route owner) and the drain branch (op errors, processing latency, worker-pool contention, volume×latency).
 
 ## Data warehouse
 
@@ -21,9 +21,11 @@ The compiled, interlinked knowledge base for the `EightfoldAI/vscode` (`www`) co
 
 ## Processor
 
-- [[processor/processor-event-log|processor_event_log table]] — the per-message event log for SQS-driven processor ops: **SMID = `processor_msg_id`**, parent edge `processor_parent_msg_id`, op = `operation0` (`operations_list`); modelled by `ProcessorLogEvent` (logical db_type `REDSHIFT_LOG`, resolved per region by the adapter factory); the `get_processor_event_logs` helper's `group_id` requirement.
+- [[processor/processor-event-log|processor_event_log table]] — the per-message event log for SQS-driven processor ops: **SMID = `processor_msg_id`**, parent edge `processor_parent_msg_id`, op = `operation0` (`operations_list`); modelled by `ProcessorLogEvent` (logical db_type `REDSHIFT_LOG`, resolved per region by the adapter factory); the `get_processor_event_logs` helper's `group_id` requirement; column semantics — `latency_milliseconds` = **processing** latency (not queue wait; use `percentile_approx`/`total_proc_sec`), the `data_json` payload (`_traceback`, inner `event_type`, `update_spec[0].retry_count`), `msg_retry_count` `-1` sentinel.
 - [[processor/tracing-processor-op-lineage|Tracing processor-op lineage]] — find a SMID's root processor op by walking `processor_parent_msg_id` to the parentless row; the dispatch mechanism (`_parent_msg_id`), and the `REROUTE_TO_HIGH_MEM` same-op two-hop reroute shape.
 - [[processor/op-registry|op_registry]] — the central map from a processor operation name (the `operation0` value) to its `(module_path, ClassName)`, i.e. the source file that defines the op.
+- [[processor/queue-worker-pool-segregation|Processor worker-pool / queue-group segregation]] — processor capacity is segregated into named **queue groups** (`processor_worker_<instance_type>_ecs_config` → `worker_config: queue_group → {queues, max_count, scale_out}`, via `ecs_scaling_utils`); how to resolve a queue's pools + sibling queues to test drain-side contention. Region-scoped runtime config.
+- [[processor/trigger-event-fanout|trigger_event fan-out]] — the two mechanisms that re-broadcast entity changes as `trigger_event` messages: the interceptor `post_save` re-seed (dominant) and the `write_back_sor` retry self-loop (bounded at 6); why their `schedule_after_secs` delay forces distinct-parent attribution.
 
 ## Infra / telemetry
 

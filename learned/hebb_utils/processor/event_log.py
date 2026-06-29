@@ -186,6 +186,141 @@ def count_events(group_by, processor_parent_msg_id=None, group_id=None, operatio
             "rows": run_select(q, db_type)}
 
 
+# Dims allowed in a latency breakdown's GROUP BY (besides an optional time bucket).
+_LAT_DIMS = ("operation0", "group_id")
+
+
+def _require_window(**named):
+    """Validate that each named value is a t_create literal (YYYY-MM-DD[ HH:MM[:SS]])."""
+    for label, val in named.items():
+        if not (val and _TS_RE.match(val)):
+            raise ProcessorEventLogError(
+                f"invalid/missing {label} (expected 'YYYY-MM-DD[ HH:MM[:SS]]')")
+
+
+def _require_queue(queue_name):
+    if not (queue_name and _IDENT_RE.match(queue_name)):
+        raise ProcessorEventLogError(f"invalid queue_name: {queue_name!r}")
+
+
+def throughput_timeseries(queue_name, since, until, bucket_minutes=15):
+    """Per-bucket inflow (``message_dispatched``) vs drain (``message_processed``) for a queue.
+
+    The **stock/flow** diagnostic for a backed-up queue: depth is the running sum of
+    ``dispatched_in - processed_out``, so this overlay reconstructs the CloudWatch
+    depth curve and tells you which side moved (inflow surge vs drain dip). Returns
+    ``{"db_type","table","queue","bucket_minutes","rows":[{bucket,dispatched_in,
+    processed_out,net_delta}]}`` ordered by bucket. ``queue_name`` matches the trimmed
+    column (trailing space tolerated).
+    """
+    _require_queue(queue_name)
+    _require_window(since=since, until=until)
+    bm = int(bucket_minutes)
+    if bm <= 0:
+        raise ProcessorEventLogError("bucket_minutes must be a positive integer")
+    db_type, table = resolve_db_type_and_table()
+    q = (f"SELECT TIME_SLICE(t_create, INTERVAL {bm} MINUTE) AS bucket, "
+         f"SUM(CASE WHEN event_type='message_dispatched' THEN 1 ELSE 0 END) AS dispatched_in, "
+         f"SUM(CASE WHEN event_type='message_processed' THEN 1 ELSE 0 END) AS processed_out "
+         f"FROM {table} WHERE TRIM(queue_name) = '{queue_name}' "
+         f"AND t_create >= '{since}' AND t_create <= '{until}' "
+         f"GROUP BY TIME_SLICE(t_create, INTERVAL {bm} MINUTE) ORDER BY 1")
+    rows = run_select(q, db_type)
+    for r in rows:
+        try:
+            r["net_delta"] = int(r.get("dispatched_in") or 0) - int(r.get("processed_out") or 0)
+        except (TypeError, ValueError):
+            r["net_delta"] = None
+    return {"db_type": db_type, "table": table, "queue": queue_name,
+            "bucket_minutes": bm, "rows": rows}
+
+
+def latency_breakdown(queue_name, since, until, bucket_minutes=None, by=None,
+                      operation0=None, group_id=None, limit=200):
+    """Latency + worker-cost breakdown of ``message_processed`` rows for a queue.
+
+    Groups by an optional time bucket (``bucket_minutes``) and/or the dims in ``by``
+    (subset of ``operation0``, ``group_id``) and reports, per group: ``processed_out``
+    (count), ``p50_ms`` / ``p90_ms`` (``percentile_approx`` — robust to the
+    multi-million-ms ``MAX(latency_milliseconds)`` tail), and ``total_proc_sec`` =
+    ``SUM(latency_milliseconds)/1000`` (volume x per-message latency = the worker
+    capacity consumed; **worker-equivalents = total_proc_sec / window_seconds**).
+    ``latency_milliseconds`` is op *processing* latency (dequeue->done), not queue
+    wait — so it is a genuine drain-rate driver. Ordered by bucket when time-bucketed,
+    else by ``total_proc_sec`` desc. At least one of ``bucket_minutes``/``by`` required.
+    """
+    _require_queue(queue_name)
+    _require_window(since=since, until=until)
+    by = list(by or [])
+    bad = [c for c in by if c not in _LAT_DIMS]
+    if bad:
+        raise ProcessorEventLogError(
+            f"invalid by dim(s): {bad!r} (allowed: {', '.join(_LAT_DIMS)})")
+    where = ["event_type = 'message_processed'", f"TRIM(queue_name) = '{queue_name}'",
+             f"t_create >= '{since}'", f"t_create <= '{until}'"]
+    for col, val in (("operation0", operation0), ("group_id", group_id)):
+        if val:
+            if not _IDENT_RE.match(val):
+                raise ProcessorEventLogError(f"invalid {col}: {val!r}")
+            where.append(f"{col} = '{val}'")
+    select_exprs, group_exprs = [], []
+    if bucket_minutes is not None:
+        bm = int(bucket_minutes)
+        if bm <= 0:
+            raise ProcessorEventLogError("bucket_minutes must be a positive integer")
+        select_exprs.append(f"TIME_SLICE(t_create, INTERVAL {bm} MINUTE) AS bucket")
+        group_exprs.append(f"TIME_SLICE(t_create, INTERVAL {bm} MINUTE)")
+    select_exprs.extend(by)
+    group_exprs.extend(by)
+    if not group_exprs:
+        raise ProcessorEventLogError(
+            "latency_breakdown needs bucket_minutes and/or at least one by dim")
+    order = "1" if bucket_minutes is not None else "total_proc_sec DESC"
+    db_type, table = resolve_db_type_and_table()
+    q = (f"SELECT {', '.join(select_exprs)}, COUNT(*) AS processed_out, "
+         f"ROUND(percentile_approx(latency_milliseconds, 0.5)) AS p50_ms, "
+         f"ROUND(percentile_approx(latency_milliseconds, 0.9)) AS p90_ms, "
+         f"ROUND(SUM(latency_milliseconds)/1000.0) AS total_proc_sec "
+         f"FROM {table} WHERE {' AND '.join(where)} "
+         f"GROUP BY {', '.join(group_exprs)} ORDER BY {order} LIMIT {int(limit)}")
+    return {"db_type": db_type, "table": table, "queue": queue_name, "by": by,
+            "bucket_minutes": bucket_minutes, "rows": run_select(q, db_type)}
+
+
+def parent_attribution(queue_name, since, until, parent_since=None, parent_until=None,
+                       limit=50):
+    """Rank the **parent ops** that produced a queue's messages (the driver breakdown).
+
+    The CORRECT parent metric: ``COUNT(DISTINCT processor_msg_id)`` over the parent
+    set, with **NO ``event_type`` filter on the outer query**. Filtering the outer on
+    ``message_dispatched`` undercounts scheduled/retry parents — a retry/re-seed
+    message is dispatched with a backoff delay, so its dispatch row lands outside the
+    window even though its fan-out into the queue lands inside. The inner set is the
+    distinct ``processor_parent_msg_id`` of the queue's ``message_dispatched`` rows in
+    ``[since, until]``; the outer parent window defaults to the same window but should
+    be **widened earlier** (``parent_since``) to catch delayed parents. Returns
+    ``{... "rows":[{operation0, distinct_msgs}]}`` ordered desc.
+    """
+    _require_queue(queue_name)
+    parent_since = parent_since or since
+    parent_until = parent_until or until
+    _require_window(since=since, until=until,
+                    parent_since=parent_since, parent_until=parent_until)
+    db_type, table = resolve_db_type_and_table()
+    q = (f"SELECT operation0, COUNT(DISTINCT processor_msg_id) AS distinct_msgs "
+         f"FROM {table} "
+         f"WHERE t_create >= '{parent_since}' AND t_create <= '{parent_until}' "
+         f"AND processor_msg_id IN ("
+         f"SELECT DISTINCT processor_parent_msg_id FROM {table} "
+         f"WHERE event_type = 'message_dispatched' AND TRIM(queue_name) = '{queue_name}' "
+         f"AND t_create >= '{since}' AND t_create <= '{until}' "
+         f"AND processor_parent_msg_id IS NOT NULL) "
+         f"GROUP BY operation0 ORDER BY distinct_msgs DESC LIMIT {int(limit)}")
+    return {"db_type": db_type, "table": table, "queue": queue_name,
+            "child_window": [since, until], "parent_window": [parent_since, parent_until],
+            "rows": run_select(q, db_type)}
+
+
 def hop_from_rows(smid, depth, rows):
     """Collapse one message's rows (one per event_type) into a single hop summary."""
     events = sorted({r.get("event_type") for r in rows if r.get("event_type")})
