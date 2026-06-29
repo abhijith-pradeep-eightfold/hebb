@@ -1,5 +1,6 @@
 ---
 name: trace-processor-op
+model: sonnet
 description: Trace a processor SMID to its root op and print the op chain that led to it. Use when a task gives you a SMID (processor_msg_id) and asks for its root processor op, its parent/lineage, or the chain of ops via processor_event_log — e.g. "what's the root op of SMID <uuid>", "trace this processor message to its origin", "which op dispatched this message". Walks processor_parent_msg_id up to the parentless root via the data warehouse.
 knowledge_required:
   - "[[../../../wiki/processor/processor-event-log|processor_event_log table]]"

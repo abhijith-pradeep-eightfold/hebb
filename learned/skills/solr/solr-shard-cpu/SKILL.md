@@ -1,5 +1,6 @@
 ---
 name: solr-shard-cpu
+model: sonnet
 description: Report the CPU utilization of a Solr shard end-to-end, in one step — given a collection name and shard ID, resolve every replica's EC2 host and pull each replica's CloudWatch CPU (Average + Maximum) against the alarm threshold. Use whenever a task asks for the CPU / utilization / load of a Solr shard starting from collection + shard number rather than an alarm or an InstanceId — e.g. "what is the CPU of positions shard 2", "CPU of profiles shard 21", "is user_calendar_events shard 0 hot", "check the load on positions shard 7". By default it prints an aggregate (min/mean/max + breach blocks) for every replica; pass --per-bucket for a one-row-per-period table (e.g. "hourly/per-bucket CPU table for profiles shard 21", "24h CPU by hour") and --replica N to report just one replica ("CPU of positions shard 2 replica 0"). This is the one-call combination of solr-shard-dns-lookup → inspect-cloudwatch-metric (no judgment between the steps). Use the individual skills instead when you need ONLY the hosts (solr-shard-dns-lookup) or ONLY a CPU curve from a PagerDuty alarm / known InstanceId (inspect-cloudwatch-metric).
 ---
 

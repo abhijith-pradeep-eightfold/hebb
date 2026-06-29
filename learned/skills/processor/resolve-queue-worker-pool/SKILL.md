@@ -1,5 +1,6 @@
 ---
 name: resolve-queue-worker-pool
+model: sonnet
 description: Resolve which processor worker-pool (queue-group) drains a given SQS queue, and the sibling queues that share those pools, for a region. Use when a task needs to know a processor queue's drain capacity or whether it contends with neighbours — "which worker pool drains index_requests", "what queues share a pool with <queue>", "is <queue> on a dedicated pool", "find the queue-group siblings of <queue>", or the drain-side noisy-neighbour check of a "Queue backed up" oncall (does a pool-sibling's inbound spike explain the drain dip). Reads the live region-scoped processor_worker_<instance_type>_ecs_config via ecs_scaling_utils. Pair the sibling list with query-queue-throughput to test each sibling's inbound.
 knowledge_required:
   - "[[../../../wiki/processor/queue-worker-pool-segregation|Processor worker-pool / queue-group segregation]]"

@@ -1,5 +1,6 @@
 ---
 name: solr-shard-dns-lookup
+model: sonnet
 description: Look up the EC2 DNS hostnames and InstanceIds for all replicas of a Solr shard, given any collection name in SEARCH_INDEX_SETTINGS_REGISTRY (e.g. profiles, positions, user_calendar_events, user_login, courses, org_units, etc.) and a shard ID. Use this whenever a task identifies a Solr shard by collection + shard number but does not yet have a hostname or EC2 instance — e.g. "find the host for positions shard 7", "which EC2 instance serves user_calendar_events shard 0", "look up shard hosts from search_config", "get EC2 InstanceId for Solr shard N". This is the right first step before a CloudWatch CPU pull (use inspect-cloudwatch-metric next) or any task that needs to locate the physical host behind a shard. Do NOT use when you already have a CloudWatch alarm name or an InstanceId — go straight to inspect-cloudwatch-metric in that case.
 ---
 

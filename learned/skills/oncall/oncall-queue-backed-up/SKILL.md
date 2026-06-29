@@ -1,5 +1,6 @@
 ---
 name: oncall-queue-backed-up
+model: sonnet
 description: High-level oncall runbook for a "Queue backed up" (SQS queue-depth) PagerDuty page. Use when you pick up a "[<region>] Queue backed up-<queue>" alarm and want the end-to-end investigation, not just one step — confirm and characterize the queue-depth spike, find which operation0/group flooded the queue, trace it to its root processor op, and route to the owning team. Sequences inspect-cloudwatch-metric → query-processor-event-log → trace-processor-op → codeowners-owner. Reach for this whenever an SQS queue-backed-up / queue-depth alarm pages.
 knowledge_required:
   - "[[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]"

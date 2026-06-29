@@ -1,5 +1,6 @@
 ---
 name: oncall-post-report
+model: sonnet
 description: Post a finished oncall investigation report back to the PagerDuty Slack thread — create a Slack Canvas with the full table-structured report and reply with a concise summary in the alert thread. Use as the final step of any oncall ticket (queue backed up, Solr CPU too high, etc.) once the investigation is done and the user asks to "post the report in Slack" / "share this in the PD thread" / "post to the oncall channel". Encodes two safety rules every outward-facing oncall post must follow: confirm the destination/surface before posting, and render every person/team/customer reference as plain text (never an @-mention) so the post pages no one.
 knowledge_required:
   - "[[../../../wiki/oncall/oncall-investigation|Oncall investigation — ticket types]]"

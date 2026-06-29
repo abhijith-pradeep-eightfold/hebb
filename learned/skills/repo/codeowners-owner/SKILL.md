@@ -1,5 +1,6 @@
 ---
 name: codeowners-owner
+model: sonnet
 description: >-
   Resolve who owns a source file (or a processor operation) in the EightfoldAI/vscode repo
   from .github/CODEOWNERS, applying GitHub's last-matching-pattern-wins semantics, with a

@@ -1,5 +1,6 @@
 ---
 name: plot-result-set
+model: sonnet
 description: Plot a result set — a JSON array of row objects — to a PNG bar or line chart, saved headlessly. Use when a task needs to chart, graph, or visualize query results (e.g. counts in time buckets) and save an image. Pairs with query-starrocks, whose `--json-out PATH` writes exactly the rows this skill consumes.
 ---
 

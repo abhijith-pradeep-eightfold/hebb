@@ -1,5 +1,6 @@
 ---
 name: query-processor-event-log
+model: sonnet
 description: Read rows from the processor_event_log warehouse table by filter — processor_msg_id (SMID), processor_parent_msg_id, group_id, operation0, queue_name, event_type, and/or a time window (relative hours or absolute since/until) — or get a COUNT(*) breakdown grouped by columns (count-by) instead of raw rows. Use when a task asks to look at processor op events / SQS processor messages: "show the events for SMID <uuid>", "what ops ran for group X in the last 6h", "find children of this message", "did operation Y pass or fail", "list message_processed rows for tenant Z", or "which operation0/group flooded queue Z over this window" (count-by breakdown). For walking a SMID all the way to its ROOT op use trace-processor-op instead; for arbitrary StarRocks SQL use query-starrocks.
 knowledge_required:
   - "[[../../../wiki/processor/processor-event-log|processor_event_log table]]"

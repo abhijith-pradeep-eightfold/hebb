@@ -1,5 +1,6 @@
 ---
 name: query-starrocks
+model: sonnet
 description: Run a read-only query against the StarRocks data warehouse (e.g. log.search_query_log) from the vscode repo. Use when a task asks to count, aggregate, or read rows from StarRocks / the data warehouse — it points you at the StarRocks access pattern and the correct import root so you don't re-derive them.
 ---
 

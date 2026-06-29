@@ -1,5 +1,6 @@
 ---
 name: query-queue-throughput
+model: sonnet
 description: Time-bucketed throughput & drain diagnostics for one processor SQS queue from processor_event_log — inflow-vs-drain rate (the stock/flow fork), per-message latency (p50/p90 + total_proc_sec, by op or tenant), and the correct distinct-parent driver breakdown. Use when diagnosing a backed-up queue beyond "what's in it": "is this queue's depth an inflow surge or a drain dip", "plot dispatched vs processed per 15 min for <queue>", "which op/tenant's index latency spiked", "rank tenants by worker-seconds consumed", or "which op produced the messages that flooded <queue>" (distinct-parent attribution, not an event_type COUNT(*)). Pairs with inspect-cloudwatch-metric (overlay on the depth curve) and resolve-queue-worker-pool (test sibling inbound). For raw rows or simple COUNT(*) breakdowns use query-processor-event-log; for the root-op walk use trace-processor-op.
 knowledge_required:
   - "[[../../../wiki/processor/processor-event-log|processor_event_log table]]"
