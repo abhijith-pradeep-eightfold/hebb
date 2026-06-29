@@ -62,7 +62,8 @@ def main(argv=None):
     ap.add_argument("--alarm-prefix",
                     help="alarm name prefix (default '[<region>] Queue backed up-<queue>')")
     args = ap.parse_args(argv)
-    region = (region
+    region = (args.region
+              or os.environ.get("AWS_DEFAULT_REGION")
               or os.environ.get("EF_DEFAULT_REGION")
               or "us-west-2")
 

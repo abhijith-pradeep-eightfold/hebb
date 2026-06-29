@@ -14,26 +14,15 @@ These are **telemetry reads**, not writes — run them unattended. Reachability 
 
 ## Step 0 — if you start from DNS (no alarm in hand)
 
-If you reached this point via a `search_config` DNS lookup (see [[../solr/solr-shard-dns-lookup|Solr shard DNS lookup via search_config]]) rather than a PagerDuty alarm, you need to resolve the DNS hostname to an EC2 InstanceId before pulling CloudWatch metrics:
+If you reached this point via a `search_config` DNS lookup (see [[../solr/solr-shard-dns-lookup|Solr shard DNS lookup via search_config]]) rather than a PagerDuty alarm, the DNS hostname must be resolved to an EC2 InstanceId (a `describe-instances` filter on `dns-name`) before pulling CloudWatch metrics. That resolution is bundled inside the **`solr-shard-dns-lookup` skill** (and the combined **`solr-shard-cpu` skill**) — you don't issue the lookup by hand.
 
-```bash
-aws ec2 describe-instances --region us-west-2 \
-  --filters "Name=dns-name,Values=<ec2-xx-xx-xx-xx.us-west-2.compute.amazonaws.com>" \
-  --query "Reservations[*].Instances[*].InstanceId" --output text
-```
-
-- Run once per replica DNS hostname. The result (`i-...`) feeds directly into Step 2 below.
-- If you *do* have an alarm name, skip this step — the alarm definition in Step 1 already carries the `InstanceId` dimension.
-- This is also the path for a **plain current-state question** ("what is the CPU of `<collection>` shard `<N>` right now?") with no incident or alarm behind it: resolve the InstanceIds, **skip Step 1 (`describe-alarms`) entirely**, and go straight to the Step 2 timeseries. Report each replica per [[../solr/solr-collection-topology|topology]] — a shard's CPU is per-replica. (Confirmed on positions shard 2: both replicas ~5% Average, no alarm firing.) For this collection+shard case the `solr-shard-cpu` skill runs the whole pipeline in one call — see the [[skills/index|Skills catalog]].
+- One InstanceId is resolved per replica DNS hostname; the result (`i-...`) is what the Step 2 timeseries pull keys on.
+- If you *do* have an alarm name, you don't need this — the alarm definition in Step 1 already carries the `InstanceId` dimension.
+- This is also the path for a **plain current-state question** ("what is the CPU of `<collection>` shard `<N>` right now?") with no incident or alarm behind it: resolve the InstanceIds, **skip the alarm read entirely**, and go straight to the Step 2 timeseries. Report each replica per [[../solr/solr-collection-topology|topology]] — a shard's CPU is per-replica. (Confirmed on positions shard 2: both replicas ~5% Average, no alarm firing.) For this collection+shard case the **`solr-shard-cpu` skill** runs the whole pipeline in one call — see the [[skills/index|Skills catalog]].
 
 ## Step 1 — the alarm definition
 
-```bash
-aws cloudwatch describe-alarms --region us-west-2 \
-  --alarm-name-prefix "[us-west-2] P1 Solr CPU Util Too High on profiles shard 21"
-```
-
-A single Solr alarm-name prefix can match **multiple** sibling alarms (one per replica). The observed "profiles shard 21" prefix returned two — replica 0 and replica 1 — each carrying its own `InstanceId` dimension (see [[../solr/solr-collection-topology|topology]] for the host↔InstanceId table). The alarm config (both replicas identical):
+The alarm definition (a `describe-alarms` read on the alarm-name prefix) is pulled by the **`inspect-cloudwatch-metric` skill** — its `pull_cpu.py --alarm-name-prefix` resolves it and feeds the result straight into the metric pull. A single Solr alarm-name prefix can match **multiple** sibling alarms (one per replica): the observed "profiles shard 21" prefix returned two — replica 0 and replica 1 — each carrying its own `InstanceId` dimension (see [[../solr/solr-collection-topology|topology]] for the host↔InstanceId table). The alarm config (both replicas identical):
 
 | Field | Value |
 |---|---|
@@ -56,17 +45,11 @@ The alarm's **`StateReasonData`** records the most recent transition: the querie
 
 ## Step 2 — the CPU timeseries
 
-```bash
-aws cloudwatch get-metric-statistics --region us-west-2 \
-  --namespace AWS/EC2 --metric-name CPUUtilization \
-  --dimensions Name=InstanceId,Value=<i-...> \
-  --start-time 2026-06-15T06:00:00Z --end-time 2026-06-15T12:00:00Z \
-  --period 60 --statistics Average Maximum
-```
+The CPU timeseries (a `get-metric-statistics` pull on `AWS/EC2 CPUUtilization`) and the breach analysis are run by the same **`inspect-cloudwatch-metric` skill** (`pull_cpu.py`, from the resolved alarm or an explicit `--instance-id`); for the collection+shard entry the **`solr-shard-cpu` skill** runs host-lookup → CPU in one call. The facts those bundled scripts encode:
 
-- The dimension is the **`InstanceId`** (from the alarm definition), not the hostname.
-- Pull a few hours either side of the suspected spike; `--period 60` gives one-minute buckets; request both `Average` and `Maximum`.
-- The raw JSON is unordered — sort by `Timestamp` locally before reading it. (A scratch sort/tabulate step that flags `Average ≥ threshold` buckets is enough; no `$CODE_BASE` import is involved.)
+- The metric dimension is the **`InstanceId`** (from the alarm definition), not the hostname.
+- Pull a few hours either side of the suspected spike; one-minute buckets (`--period 60`) and both `Average` and `Maximum` are requested.
+- AWS returns datapoints unordered; the script sorts by `Timestamp` and flags `Average ≥ threshold` buckets (no `$CODE_BASE` import is involved — a pure transform over the JSON).
 
 Observed for the alarming host (replica 0) over the 6h band: 72 one-minute Average buckets, mean ~31%, with a contiguous **08:20–08:35 UTC** block at ~98–99% Average (max ~99.7) — a genuine sustained breach, not a one-minute blip.
 

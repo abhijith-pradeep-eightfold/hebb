@@ -24,11 +24,7 @@ GET /solr/admin/collections?action=CLUSTERSTATUS&collection=<collection>&wt=json
 ```
 Returns the full shard tree: shard → replica → core URL, which contains the hostname. The replica `state` field confirms whether it is `active`. This tells you every host serving a given shard right now.
 
-**Cross-checking via CloudWatch** — if a PagerDuty alarm has already fired, the alarm definition (from `aws cloudwatch describe-alarms --alarm-names "<name>"`) carries the `InstanceId` dimension. Resolve the hostname from the instance ID:
-```
-aws ec2 describe-instances --instance-ids <InstanceId> \
-  --query "Reservations[*].Instances[*].PublicDnsName" --output text
-```
+**Cross-checking via CloudWatch** — if a PagerDuty alarm has already fired, its definition carries the host's `InstanceId` dimension (read it with the **`inspect-cloudwatch-metric` skill**). To map that InstanceId back to a hostname, run the **`solr-shard-dns-lookup` skill** for the alarm's collection + shard — it emits each replica's DNS hostname **paired with** its InstanceId, so the row whose InstanceId matches the alarm names the host (the reverse EC2 `describe-instances` lookup is bundled in that skill — no raw AWS call by hand).
 
 **Via `search_host` in `log.search_query_log`** — grouping by `search_host` WHERE `core` and `shard_id` match gives you the hosts that actually served traffic in a window; cross-reference against the Solr API to confirm whether any replica is silent (down or not receiving reads). See [[../data-warehouse/search-query-log|log.search_query_log]].
 

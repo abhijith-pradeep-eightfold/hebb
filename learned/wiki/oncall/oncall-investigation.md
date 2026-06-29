@@ -16,6 +16,7 @@ Anchor on the real metric first, then correlate — the general method is [[../p
 
 - **Queue backed up** (SQS queue-depth alarm) → [[queue-backed-up|Queue backed up]].
 - **Solr CPU too high** (EC2 host-CPU alarm on a Solr replica) → [[solr-cpu-high|Solr CPU too high]].
+- **Host unhealthy** (Elastic Beanstalk ELB health-check alarm — metric-math `UnHealthy − Healthy ≥ 0`) → [[host-unhealthy|Host unhealthy]].
 
 New ticket types are added here as their incidents are compiled — each as its own page with the alarm, the flow, and the automating skills/scripts.
 
@@ -43,6 +44,7 @@ The `oncall-post-report` skill encodes both rules; **use it** to create a Canvas
 
 - `oncall-queue-backed-up` — the high-level runbook skill for the *Queue backed up* ticket type (each ticket type has one such per-type runbook skill).
 - `oncall-solr-cpu-high` — the high-level runbook skill for the *Solr CPU too high* ticket type (characterize the CPU spike → split indexing vs query → break down the drivers → trace any processor source → route).
+- `oncall-host-unhealthy` — the high-level runbook skill for the *Host unhealthy* ticket type (read the thread → characterize the merged `UnHealthy − Healthy` metric → resolve hosts + EB events → judge churn-vs-fault → route to the EB environment owner).
 - `oncall-post-report` — use it to post the finished table-structured report back to the PagerDuty Slack thread (Canvas + concise threaded reply), with a confirm-before-post gate and plain-text (non-paging) references. Applies to every ticket type.
 
 ## Related

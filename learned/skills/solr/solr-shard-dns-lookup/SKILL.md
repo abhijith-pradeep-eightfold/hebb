@@ -30,7 +30,7 @@ Skim [[../../../wiki/solr/solr-shard-dns-lookup|Solr shard DNS lookup via search
 
 ### 2. Run the bundled script (DNS hostnames + InstanceIds, no approval needed)
 
-Run the bundled script to get the replica DNS hostnames and EC2 InstanceIds for the requested shard. The script reads `$CODE_BASE` config and then resolves each DNS hostname to an InstanceId via `aws ec2 describe-instances` — all bundled, no approval required:
+Run the bundled script to get the replica DNS hostnames and EC2 InstanceIds for the requested shard. The script reads `$CODE_BASE` config and then resolves each DNS hostname to an InstanceId via a read-only EC2 `describe-instances` call — all bundled, no approval required:
 
 ```bash
 PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/get_shard_hosts.py" --collection <collection-name> --shard-id <N>

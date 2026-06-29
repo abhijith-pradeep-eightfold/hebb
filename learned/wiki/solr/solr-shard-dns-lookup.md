@@ -72,16 +72,9 @@ Always enumerate `shard_hosts.keys()` to discover the real shard ID list before 
 
 ## Resolving DNS hostnames to EC2 InstanceIds
 
-The `solr-shard-dns-lookup` skill's bundled script (`scripts/get_shard_hosts.py`) resolves DNS hostnames to InstanceIds automatically as part of its single run — no separate call needed. It calls `aws ec2 describe-instances` internally per replica:
+The `solr-shard-dns-lookup` skill's bundled script (`scripts/get_shard_hosts.py`) resolves DNS hostnames to InstanceIds automatically as part of its single run — no separate call needed. It makes a read-only EC2 `describe-instances` call per replica internally, filtered on `dns-name` (the value is the full EC2 public DNS hostname exactly as returned by `search_config`):
 
-```bash
-aws ec2 describe-instances --region us-west-2 \
-  --filters "Name=dns-name,Values=<ec2-xx-xx-xx-xx.us-west-2.compute.amazonaws.com>" \
-  --query "Reservations[*].Instances[*].InstanceId" --output json
-```
-
-- The filter key is `dns-name`; the value is the full EC2 public DNS hostname exactly as returned by `search_config`.
-- The result (`i-...`) is the InstanceId passed to `aws cloudwatch get-metric-statistics --dimensions Name=InstanceId,Value=<i-...>`.
+- The result (`i-...`) is the InstanceId the CloudWatch CPU pull keys on (the `InstanceId` metric dimension) — feed it to the **`inspect-cloudwatch-metric` skill**, or use the combined **`solr-shard-cpu` skill**, which runs host-lookup → per-replica CPU in one call.
 - The script emits `UNKNOWN` for any replica where the AWS call fails (e.g. `AccessDenied`, no match) and continues without exiting 1.
 - Pass `--no-resolve` to skip InstanceId resolution and emit only DNS hostnames (e.g. when AWS is unreachable).
 - The script output includes both `replica_N_dns` and `replica_N_instance_id` fields per replica.

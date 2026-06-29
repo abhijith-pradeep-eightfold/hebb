@@ -8,28 +8,13 @@ The page is backed by a CloudWatch **metric-math** alarm:
 - Expression `e1 = SUM(METRICS())` over a single metric `m1` = **`AWS/SQS · ApproximateNumberOfMessagesVisible`**, dimension **`QueueName = <queue>`**, Stat **Maximum**, Period **900s** (15 min).
 - Trips at **`SUM ≥ 50000`** (`GreaterThanOrEqualToThreshold`) for **4 datapoints** → ~60 min of sustained backlog. (Threshold observed for `ai_interview_op_queue`; other queues may differ — read the alarm.)
 
-**Method to read it** (metric-math alarms have **null** `MetricName`/`Namespace` at top level — the real metric is inside the `Metrics` array):
-```bash
-aws cloudwatch describe-alarms --region <region> \
-  --alarm-name-prefix "[<region>] Queue backed up-<queue>" \
-  --query "MetricAlarms[].{Threshold:Threshold,Op:ComparisonOperator,Period:Period,Eval:EvaluationPeriods,DP:DatapointsToAlarm,State:StateValue,Reason:StateReason}"
-aws cloudwatch describe-alarms --region <region> \
-  --alarm-name-prefix "[<region>] Queue backed up-<queue>" --query "MetricAlarms[].Metrics"
-```
+**How to read it:** a metric-math alarm has **null** `MetricName`/`Namespace` at top level — the real metric lives inside the alarm's `Metrics` array (so the threshold and the backing `ApproximateNumberOfMessagesVisible` metric both come from there, not the top level). The **`inspect-cloudwatch-metric` skill** reads this for you — its `pull_queue_depth.py` resolves the alarm's threshold and the metric from the `Metrics` array — so you don't issue the `describe-alarms` call by hand.
 
 ## The metric — characterize the spike
 
-```bash
-aws cloudwatch get-metric-statistics --region <region> \
-  --namespace AWS/SQS --metric-name ApproximateNumberOfMessagesVisible \
-  --dimensions Name=QueueName,Value=<queue> \
-  --start-time <ISO8601Z> --end-time <ISO8601Z> \
-  --period 900 --statistics Maximum Average \
-  --query "sort_by(Datapoints,&Timestamp)[].{t:Timestamp,max:Maximum,avg:Average}" --output table
-```
-CloudWatch timestamps are **UTC**. Establish baseline → onset → peak (vs the 50k threshold) → decay, and decide sustained breach vs one-minute blip. The shape **does not** tell you the cause: depth is a backlog, so a sustained climb can be a producer outpacing consumers **or** consumers slowing under a steady producer. Do not assume "bulk fan-out" — confirm it in the next section.
+Pull the queue's `AWS/SQS ApproximateNumberOfMessagesVisible` curve (Maximum + Average, per 900s bucket, dimensioned on `QueueName`) over the incident window — **use the `inspect-cloudwatch-metric` skill** (`pull_queue_depth.py --queue <queue> --region <region> --start <ISO8601Z> --end <ISO8601Z>`), which reads the alarm threshold, pulls the curve, tabulates it sorted by timestamp, and flags buckets at/over the threshold. The read-only AWS calls live inside that bundled script, so they run unattended.
 
-To pull this in one step from an alarm name or InstanceId, **use the `inspect-cloudwatch-metric` skill** (it handles CloudWatch alarm + metric pulls, including metric-math/queue-depth alarms, not only EC2 CPU).
+CloudWatch timestamps are **UTC**. Establish baseline → onset → peak (vs the 50k threshold) → decay, and decide sustained breach vs one-minute blip. The shape **does not** tell you the cause: depth is a backlog, so a sustained climb can be a producer outpacing consumers **or** consumers slowing under a steady producer. Do not assume "bulk fan-out" — confirm it in the next section.
 
 ## Depth is a stock — fork on inflow vs drain
 
@@ -96,18 +81,32 @@ If the fork shows inflow flat/falling while depth climbed, the backlog is a **th
 
 The `operation0 × group_id` count is over the **breach window**, but a queue can carry heavy *baseline* traffic for the same op outside the spike. Widen the window much past the breach and the burst hides under that baseline — a high-volume op (e.g. `index`) looks the same whether it spiked or not. **Narrow the breakdown to the confirmed breach window** (from the metric step) so the burst separates from baseline; a driver that dispatched most of its *whole-day* volume inside that window is the spike, not the baseline. Same metric-first discipline: the [[../infra/cloudwatch-cpu-alarm|metric]] gives you the true window before you attribute a cause.
 
+### Absolute count ≠ spike driver — compare against a baseline window
+
+Narrowing to the breach window is **necessary but not sufficient**. Within that window the **absolute** dispatch count still mixes the burst with whatever baseline the same op/tenant carries all day, so ranking drivers by raw count surfaces the **highest-baseline** tenant — not the one that actually spiked. In the witnessed 4th `index_requests` incident the raw-count #1 over the breach window was `starbucks.com` (≈79k combined), yet starbucks was **flat baseline** and contributed nothing to the surge; the true driver (`deloitte.com`) was not near the top by raw count.
+
+To separate spike from baseline, **compare the breakdown across a window triple** — a **pre** window (a quiet baseline just before onset), the **spike** window, and a **post** window — each **normalized to a per-unit-time rate** (count ÷ window-minutes, so unequal windows are comparable), then rank by **lift = spike_rate / pre_rate**:
+
+- **Spike-specific driver** → **high lift, often zero before and after** — a concentrated burst. (`deloitte.com`: 0 pre → ~23.7k/hr `index` + ~13.3k/hr `entity_index` for ~45 min → 0 post; lift effectively unbounded.)
+- **High-baseline driver** → **flat lift ≈ 1** (0.9–1.3×) — heavy but steady, **not** the cause. (`starbucks.com`, `eaton.com`, `mercadolibre.com`, `appliedmaterials.com` were all flat.)
+- **Secondary / ramping driver** → **mid lift sustained into the post window** — a new job that started during the spike and kept running. (`volkscience.com` ~6.8×, `bms.com` ~6×.)
+
+This is the inflow-branch instance of the metric-correlation rule "test causes against the confirmed window **plus a baseline**" — see [[../process/incident-metric-correlation|metric-correlation discipline]]. **Use the `query-queue-throughput` skill's comparative driver-lift mode** to fetch the pre/spike/post breakdowns and emit the per-window normalized rates + lift in one call, then **trace only the high-lift drivers** (not the raw-count leaders) to their root ops (the `trace-processor-op` skill) and route them (the `codeowners-owner` skill).
+
 ## Witnessed incidents
 
-| | `ai_interview_op_queue` (1st) | `batch_requests`, us-west-2 (2nd) | `index_requests`, us-west-2 (3rd) |
-|---|---|---|---|
-| **Threshold** | `SUM ≥ 50000`, 4 datapoints | `SUM ≥ 50000`, 4 datapoints | `SUM ≥ 50000`, 4 datapoints |
-| **Spike shape** | sudden onset, near-linear climb | sudden ramp + sharp drain; peak **77,365 (155%)**, 4×900s buckets | sustained breach **15:00–18:30 UTC (~3.5h)**, peak **114,770 (230%)**, two humps |
-| **Cause side** | **inflow** (single-tenant fan-out) | **inflow** (multi-tenant `index` burst) | **drain** — inflow *flat* (~55–94k/15min, no surge); backlog = drain dips |
-| **Driver** | one op × one tenant = **95.6%** | `index` across **two** tenants (≈30k+≈21.6k) on top of baseline | top *parent* `trigger_event` (120,176 distinct; bulk-ATS interceptor fan-out) — but the **proximate** cause was index-op latency (p90 ~3×), not the inflow |
-| **Root op** | `sync_ats` (queue `ingest_sync_requests`) | `employee_role_association_manager` → `_batch` → `index` (two-hop) | `sync_ats` → `batch_store_and_index` → `trigger_event` (re-seed); storm = interceptor `post_save` fan-out |
-| **Owners** | (per that incident) | `index` → `@EightfoldAI/core-search` `@EightfoldAI/dp-data-flow`; `employee_role_association_*` → `hpatel@eightfold.ai` | `sync_ats` + `write_back_sor.py` → `@EightfoldAI/dp-integrations`; `batch_store_and_index` → `@EightfoldAI/dp-data-flow`; `trigger_event_operation.py` → no CODEOWNERS rule |
+| | `ai_interview_op_queue` (1st) | `batch_requests`, us-west-2 (2nd) | `index_requests`, us-west-2 (3rd) | `index_requests`, us-west-2 (4th) |
+|---|---|---|---|---|
+| **Threshold** | `SUM ≥ 50000`, 4 datapoints | `SUM ≥ 50000`, 4 datapoints | `SUM ≥ 50000`, 4 datapoints | `SUM ≥ 50000` |
+| **Spike shape** | sudden onset, near-linear climb | sudden ramp + sharp drain; peak **77,365 (155%)**, 4×900s buckets | sustained breach **15:00–18:30 UTC (~3.5h)**, peak **114,770 (230%)**, two humps | 5 breach buckets from **16:45 UTC**, peak **74,811 (150%)** at 17:30; self-resolved by 17:45 |
+| **Cause side** | **inflow** (single-tenant fan-out) | **inflow** (multi-tenant `index` burst) | **drain** — inflow *flat* (~55–94k/15min, no surge); backlog = drain dips | **inflow** — single-tenant burst on the *same* queue the 3rd went drain-side |
+| **Driver** | one op × one tenant = **95.6%** | `index` across **two** tenants (≈30k+≈21.6k) on top of baseline | top *parent* `trigger_event` (120,176 distinct; bulk-ATS interceptor fan-out) — but the **proximate** cause was index-op latency (p90 ~3×), not the inflow | `deloitte.com` **>99× lift**, zero before/after (found only by comparative-window lift; raw-count #1 `starbucks.com` was *flat baseline*, not the driver); top parent `trigger_event` fan-out |
+| **Root op** | `sync_ats` (queue `ingest_sync_requests`) | `employee_role_association_manager` → `_batch` → `index` (two-hop) | `sync_ats` → `batch_store_and_index` → `trigger_event` (re-seed); storm = interceptor `post_save` fan-out | `ingest_data_extract_operation` (adhoc_file_ingest_queue, ~14:50) + `import_activity_email` (external dispatch); `volkscience.com`: `ingest_data_extract_operation` → `course_autocalibration_operation` → `entity_index` |
+| **Owners** | (per that incident) | `index` → `@EightfoldAI/core-search` `@EightfoldAI/dp-data-flow`; `employee_role_association_*` → `hpatel@eightfold.ai` | `sync_ats` + `write_back_sor.py` → `@EightfoldAI/dp-integrations`; `batch_store_and_index` → `@EightfoldAI/dp-data-flow`; `trigger_event_operation.py` → no CODEOWNERS rule | not routed (self-resolving; routing not requested this session) |
 
 The 3rd incident is the cautionary one: the inflow-branch headline (`trigger_event` flooded it → route to its owner) was a **real upstream load source but the wrong proximate cause** of the *queue depth* — that was drain-side index latency on a fixed worker pool. Always run the inflow-vs-drain fork before committing to a driver. The 2nd's lineage (`manager → batch → index`) was recovered by [[../processor/tracing-processor-op-lineage|walking `processor_parent_msg_id`]]; op→file→owner came from [[../processor/op-registry|op_registry]] + [[../repo/codeowners-ownership|CODEOWNERS]]. Source anchors: `www/processor/op_registry.py:17`/`:142`/`:143` (2nd), `:42`/`:67`/`:125` (3rd); the write_back retry loop at `www/ats/write_back_sor.py:286,291-304,324-334`.
+
+The **4th** incident is the methodological counterpart: on the **same `index_requests` queue** that earlier (3rd) went drain-side, the fork landed **inflow**, and the driver was found *only* by the [[#absolute-count--spike-driver--compare-against-a-baseline-window|comparative-window lift]] — the raw-count leader (`starbucks.com`) was flat baseline while the true driver (`deloitte.com`) showed >99× lift with zero traffic before and after a 45-min burst (an adhoc file-ingest + activity-email import). Same queue, opposite branch: always run the fork **and** compare drivers against a baseline window before naming one. The root ops were recovered with [[../processor/tracing-processor-op-lineage|`trace-processor-op`]] — and `bms.com`'s walk terminated at an `Unknown-<hex>` non-UUID parent (an external/non-processor dispatch).
 
 ## Reporting the result
 

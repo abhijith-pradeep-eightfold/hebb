@@ -29,9 +29,11 @@ A common chain shape is a **same-op two-hop chain** produced by a memory-breach 
 
 Not every parent edge points at a UUID `processor_msg_id`. Some ops dispatch their children with a `processor_parent_msg_id` of the form **`{group_id}-{hex32}`** — a composite id, not a real SMID — and that value has **no row** in [[processor-event-log|processor_event_log]]. The walk therefore **legitimately terminates** at such a child: there is nothing further up to fetch, and the child's own `operation0` is the deepest knowable op. This is a real chain ending, **not** a missing row or a broken trace.
 
-A SMID matches the charset `[0-9a-fA-F-]{8,64}` (hex + dashes only). A `{group_id}-{hex32}` parent fails that charset — it carries the tenant's domain (letters, a `.`) — so the two are distinguishable on sight: a parent that is not SMID-shaped is one of these composite dispatch ids, and the chain ends there. (The `trace-processor-op` skill stops gracefully at such a parent rather than erroring.)
+A SMID matches the charset `[0-9a-fA-F-]{8,64}` (hex + dashes only). A `{prefix}-{hex32}` parent fails that charset — its prefix is a non-hex token (the tenant's domain, letters and a `.`; or a literal marker such as `Unknown`) — so the two are distinguishable on sight: a parent that is not SMID-shaped is one of these composite dispatch ids, and the chain ends there. (The `trace-processor-op` skill stops gracefully at such a parent rather than erroring.)
 
 *Observed (witness `inputs/2026-06-29-eu-central-1-shard10-processor-breakdown.md`):* `import` ops (`operation0=import`, `queue=realtime_requests`) carry parents like `jp-ey.com-f68bf072f08848ddb5d209835748e0bf` — `group_id` (`jp-ey.com`) joined to a 32-hex token. Tracing such a SMID yields `import` as its deepest op; the chain cannot be walked past it.
+
+*Observed (witness `inputs/2026-06-29-queue-backed-up-index-requests.md`):* a `bms.com` `index` message dispatched to `index_requests` carried the parent `Unknown-2c1a019b2864f1c93c7d6ed88c627a1` — the same `{prefix}-{hex32}` shape with the literal prefix `Unknown` instead of a domain. The walk terminates immediately (depth 0): the message came from an external/non-processor caller, so there is no further row to fetch. (Contrast the same incident's `import_activity_email`, which dispatches directly to `index_requests` with a genuinely **null** parent — a normal parentless root, not a composite-id terminal.)
 
 ## Related skills
 
@@ -46,4 +48,4 @@ A SMID matches the charset `[0-9a-fA-F-]{8,64}` (hex + dashes only). A `{group_i
 - [[../data-warehouse/search-query-log|log.search_query_log]] — a processor-issued query's `sequence_message_id` **is** the SMID you trace here; that page's `env='processor'` breakdown is the upstream of this walk.
 
 ---
-*Sources:* `www/processor/queue_utils.py` (~:650, :277-303, :295, :691), `www/db/base_log_event.py:231` (the `processor_parent_msg_id` edge), `www/processor/op_monitor.py:128-131` (high-mem reroute). Witnesses: `inputs/2026-06-26-smid-processor-trace.md`, `inputs/2026-06-29-eu-central-1-shard10-processor-breakdown.md` (non-UUID `{group_id}-hex` parent on `import` ops).
+*Sources:* `www/processor/queue_utils.py` (~:650, :277-303, :295, :691), `www/db/base_log_event.py:231` (the `processor_parent_msg_id` edge), `www/processor/op_monitor.py:128-131` (high-mem reroute). Witnesses: `inputs/2026-06-26-smid-processor-trace.md`, `inputs/2026-06-29-eu-central-1-shard10-processor-breakdown.md` (non-UUID `{group_id}-hex` parent on `import` ops), `inputs/2026-06-29-queue-backed-up-index-requests.md` (`Unknown-<hex>` non-UUID parent on a `bms.com` `index` message; null-parent `import_activity_email` root).
