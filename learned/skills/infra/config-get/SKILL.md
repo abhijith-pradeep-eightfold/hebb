@@ -27,7 +27,7 @@ Read any value from the `www` global config. The capability is deliberately **mi
 `config` lives under `www`, so root the import at `$CODE_BASE/www` (see [[../../../wiki/vscode-repo/python-import-root|Python import root]]) and run with the box's **default** environment — no region override:
 
 ```bash
-PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" "/home/ec2-user/hebb/.claude/skills/skill-writer/scripts/read_config.py" "$@"
+PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/read_config.py" "$@"
 ```
 
 Arguments:

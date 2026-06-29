@@ -16,7 +16,7 @@ AccessDenied on secrets-manager-ro). See learned/wiki/infra/config-get.md.
 Run it (gate-passing shape; config lives under www, so root at $CODE_BASE/www):
 
     PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" \
-        /home/ec2-user/hebb/.claude/skills/skill-writer/scripts/read_config.py \
+        "${CLAUDE_SKILL_DIR}/scripts/read_config.py" \
         <config_name> [--field-name FIELD] [--has KEY]
 """
 from __future__ import absolute_import
