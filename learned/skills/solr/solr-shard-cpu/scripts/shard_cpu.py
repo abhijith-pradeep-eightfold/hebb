@@ -52,6 +52,7 @@ from hebb_utils.aws.cloudwatch import (  # noqa: E402
     CloudWatchError,
     fetch_cpu,
     report,
+    report_buckets,
     series_from_datapoints,
 )
 
@@ -82,6 +83,12 @@ def main(argv=None):
                    help="CloudWatch bucket size in seconds (default 60 = 1-minute buckets)")
     p.add_argument("--threshold", type=float, default=75.0,
                    help="breach threshold (default 75.0, the Solr CPU alarm threshold)")
+    p.add_argument("--replica", type=int, default=None,
+                   help="report only this replica index (0-based, in resolved order); "
+                        "default: all replicas")
+    p.add_argument("--per-bucket", action="store_true",
+                   help="emit one row per period (bucket_start_utc, Average, Maximum, breach "
+                        "flag) instead of the aggregate min/mean/max summary")
     args = p.parse_args(argv)
 
     # Resolve the time window (UTC).
@@ -102,17 +109,31 @@ def main(argv=None):
     replicas = [{"dns": dns, "instance_id": resolve_instance_id(dns, region)}
                 for dns in replica_dns]
 
+    # Optional single-replica selection (default: all replicas), keeping the
+    # original resolved index as the replica label.
+    if args.replica is not None:
+        if args.replica < 0 or args.replica >= len(replicas):
+            print(f"error: --replica {args.replica} out of range; shard has "
+                  f"{len(replicas)} replica(s) (indices 0..{len(replicas) - 1}).",
+                  file=sys.stderr)
+            return 1
+        selected = [(args.replica, replicas[args.replica])]
+    else:
+        selected = list(enumerate(replicas))
+
     print(f"collection : {args.collection}")
     print(f"shard_id   : {args.shard_id}")
     print(f"region     : {region}")
     print(f"window     : {start_time} .. {end_time}  (period {args.period}s, UTC)")
-    print(f"replicas   : {len(replicas)}")
+    print(f"replicas   : {len(replicas)}"
+          + (f"  (showing replica {args.replica} only)" if args.replica is not None else ""))
+    print(f"output     : {'per-bucket table' if args.per_bucket else 'aggregate summary'} per replica")
     print("note       : 'the CPU of a shard' is per-replica — one figure per replica host.")
     print()
 
     # Stage 2: per-replica CPU (www-free analysis util). No judgment between stages.
     exit_code = 0
-    for i, r in enumerate(replicas):
+    for i, r in selected:
         iid = r["instance_id"]
         label_base = f"replica {i} ({r['dns']} / {iid})"
         if not iid or iid in ("UNKNOWN", "(skipped)"):
@@ -131,10 +152,17 @@ def main(argv=None):
             exit_code = 1
             continue
         datapoints = doc.get("Datapoints", []) if isinstance(doc, dict) else []
-        # Report both the alarm-evaluated Average and the per-minute Maximum.
-        for stat in ("Average", "Maximum"):
-            rows = series_from_datapoints(datapoints, stat)
-            report(f"{label_base} — {stat}", rows, args.threshold, stat)
+        if args.per_bucket:
+            # One row per bucket: Average + Maximum columns, breach flag/summary on
+            # the alarm-evaluated Average.
+            series_by_stat = {stat: series_from_datapoints(datapoints, stat)
+                              for stat in ("Average", "Maximum")}
+            report_buckets(label_base, series_by_stat, args.threshold)
+        else:
+            # Aggregate summary: both the alarm-evaluated Average and per-minute Maximum.
+            for stat in ("Average", "Maximum"):
+                rows = series_from_datapoints(datapoints, stat)
+                report(f"{label_base} — {stat}", rows, args.threshold, stat)
 
     return exit_code
 

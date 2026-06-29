@@ -1,6 +1,6 @@
 ---
 name: solr-shard-cpu
-description: Report the CPU utilization of a Solr shard end-to-end, in one step — given a collection name and shard ID, resolve every replica's EC2 host and pull each replica's CloudWatch CPU (Average + Maximum) against the alarm threshold. Use whenever a task asks for the CPU / utilization / load of a Solr shard starting from collection + shard number rather than an alarm or an InstanceId — e.g. "what is the CPU of positions shard 2", "CPU of profiles shard 21", "is user_calendar_events shard 0 hot", "check the load on positions shard 7". This is the one-call combination of solr-shard-dns-lookup → inspect-cloudwatch-metric (no judgment between the steps). Use the individual skills instead when you need ONLY the hosts (solr-shard-dns-lookup) or ONLY a CPU curve from a PagerDuty alarm / known InstanceId (inspect-cloudwatch-metric).
+description: Report the CPU utilization of a Solr shard end-to-end, in one step — given a collection name and shard ID, resolve every replica's EC2 host and pull each replica's CloudWatch CPU (Average + Maximum) against the alarm threshold. Use whenever a task asks for the CPU / utilization / load of a Solr shard starting from collection + shard number rather than an alarm or an InstanceId — e.g. "what is the CPU of positions shard 2", "CPU of profiles shard 21", "is user_calendar_events shard 0 hot", "check the load on positions shard 7". By default it prints an aggregate (min/mean/max + breach blocks) for every replica; pass --per-bucket for a one-row-per-period table (e.g. "hourly/per-bucket CPU table for profiles shard 21", "24h CPU by hour") and --replica N to report just one replica ("CPU of positions shard 2 replica 0"). This is the one-call combination of solr-shard-dns-lookup → inspect-cloudwatch-metric (no judgment between the steps). Use the individual skills instead when you need ONLY the hosts (solr-shard-dns-lookup) or ONLY a CPU curve from a PagerDuty alarm / known InstanceId (inspect-cloudwatch-metric).
 ---
 
 # Solr shard CPU (collection + shard → per-replica CPU)
@@ -12,7 +12,8 @@ The grounding facts live in the wiki — [[../../../wiki/solr/solr-collection-to
 ## When to use this skill
 
 - You have a **collection name + shard ID** and want its CPU — a current-state "how hot is this shard right now" question, with no PagerDuty alarm in hand.
-- You want **all replicas** of the shard measured (a shard's CPU is per-replica; this skill reports each host's Average and Maximum).
+- You want **all replicas** of the shard measured (a shard's CPU is per-replica; this skill reports each host's Average and Maximum) — or just **one replica** (`--replica N`).
+- You want either an **aggregate** summary (default) or a **per-bucket table**, one row per period (`--per-bucket`) — e.g. an hourly CPU table over 24h.
 
 Use a **constituent** skill instead when the task is narrower (they stay independently usable):
 - only need the hosts/InstanceIds → **`solr-shard-dns-lookup`**;
@@ -40,12 +41,16 @@ PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/shard_
 
 - `PYTHONPATH="$CODE_BASE/www"` — the host stage reads vscode config in-process; the shared logic imports as `hebb_utils`, which coexists with vscode's `utils` (see [[../../../wiki/vscode-repo/python-import-root|Python import root]]).
 - Defaults to the **last 3 hours** at `--period 60` (1-minute buckets) and `--threshold 75`. Override the window with `--hours <H>` or an explicit `--start-time`/`--end-time` (ISO-8601 UTC, e.g. `2026-06-26T09:50:00Z`); change the region with `--region` (default resolves to `us-west-2`).
+- **Output modes:** by default it prints the **aggregate** summary (min/mean/max + contiguous-breach blocks) for **every** replica. Add `--per-bucket` for a **one-row-per-period table** (`bucket_start_utc`, Average, Maximum, breach flag + a per-replica summary line) — pair it with a coarser `--period` (e.g. `--period 3600 --hours 24` for hourly buckets over a day). Add `--replica N` (0-based, in resolved order) to report a **single** replica; out-of-range exits non-zero and reports the replica count. Example — hourly table for one replica over 24h:
+  ```bash
+  PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/shard_cpu.py" --collection profiles --shard-id 21 --replica 0 --per-bucket --hours 24 --period 3600
+  ```
 - If the shard doesn't exist, the script exits non-zero and the error includes the **available shard IDs** (shard numbering is non-contiguous) — report them and confirm the right shard.
 - If a replica's InstanceId couldn't be resolved (AWS error), that replica is reported as un-pullable and the others still complete; the script does not abort the whole run.
 
 ### 3. Report
 
-For each replica, present its Average (the alarm-comparable figure) and Maximum (peaks), plus whether any bucket reached the threshold. There is **no single shard CPU** — report one figure set per replica host. Include collection, shard_id, region, and the window.
+For each replica, present its Average (the alarm-comparable figure) and Maximum (peaks), plus whether any bucket reached the threshold. There is **no single shard CPU** — report one figure set per replica host. Include collection, shard_id, region, and the window. With `--per-bucket`, present the per-period table as-is (one row per bucket); judge breach on the **Average** column — a lone high per-minute **Maximum** with a low Average is normal, not a breach (see [[../../../wiki/infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm]]).
 
 ## Notes
 

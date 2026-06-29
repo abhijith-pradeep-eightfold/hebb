@@ -70,6 +70,8 @@ aws cloudwatch get-metric-statistics --region us-west-2 \
 
 Observed for the alarming host (replica 0) over the 6h band: 72 one-minute Average buckets, mean ~31%, with a contiguous **08:20–08:35 UTC** block at ~98–99% Average (max ~99.7) — a genuine sustained breach, not a one-minute blip.
 
+**Average vs. Maximum — read the right statistic.** The alarm evaluates **Average**, so that is the breach signal; **Maximum** is a per-bucket peak that can momentarily hit ~100% without lifting the Average, and on its own is **not** a breach. Witnessed on `profiles` shard 21 (2026-06-29, current-state pull): hourly Average stayed ~5% (mean 5.15%, max 17%) across 24h with **0** buckets ≥ 75%, even though per-minute Maximum within an hour spiked to 99.77% (then 68%, 60%, 53%) — short peaks that left the Average low. Report both, but judge breach on the Average; a lone high Maximum is normal.
+
 ## Timezone — CloudWatch is UTC
 
 CloudWatch metric and alarm timestamps are **UTC**. (The PagerDuty console may *display* the page time in IST — e.g. 14:22 IST = 08:52 UTC, IST = UTC + 5:30 — but that is a console-rendering detail; the underlying metric is UTC.)
@@ -85,4 +87,4 @@ When correlating against [[../data-warehouse/search-query-log|log.search_query_l
 
 
 ---
-*Sources:* witness `inputs/2026-06-24-solr-cpu-spike-debug.md` (`[17:06]` env/reachability, `[17:09]` prepared commands, `[17:14]` both `describe-alarms` + `get-metric-statistics` results and the UTC/IST resolution); witness `inputs/2026-06-26-positions-shard2-cpu.md` (`[12:50]` current-state, no-alarm `get-metric-statistics` on both `positions` shard 2 replica InstanceIds, Average + Maximum, threshold 75 — Step 0 → Step 2 with Step 1 skipped).
+*Sources:* witness `inputs/2026-06-24-solr-cpu-spike-debug.md` (`[17:06]` env/reachability, `[17:09]` prepared commands, `[17:14]` both `describe-alarms` + `get-metric-statistics` results and the UTC/IST resolution); witness `inputs/2026-06-26-positions-shard2-cpu.md` (`[12:50]` current-state, no-alarm `get-metric-statistics` on both `positions` shard 2 replica InstanceIds, Average + Maximum, threshold 75 — Step 0 → Step 2 with Step 1 skipped); witness `inputs/2026-06-29-profiles-shard21-cpu.md` (`[09:26]` per-hour buckets on `profiles` shard 21 replica 0 — Average ~5% all 24h while per-minute Maximum spiked to ~100%; the Average-vs-Maximum reading rule).

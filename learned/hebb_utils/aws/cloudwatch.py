@@ -15,10 +15,10 @@ Two halves:
   - `fetch_cpu(...)`  — a read-only `aws cloudwatch get-metric-statistics` call,
     returning the parsed AWS JSON dict. Raises `CloudWatchError` on failure.
   - the analysis functions (`series_from_datapoints`, `load_series`,
-    `contiguous_breaches`, `report`) — pure transforms over the datapoints that
-    sort by timestamp, summarise min/max/mean, and flag breach blocks as
+    `contiguous_breaches`, `report`, `report_buckets`) — pure transforms over the
+    datapoints that sort by timestamp, summarise min/max/mean, flag breach blocks as
     `SUSTAINED` (>=5 contiguous buckets, i.e. it would clear the Solr alarm's
-    5-of-6 rule) or `blip`.
+    5-of-6 rule) or `blip` (`report`), or print one row per bucket (`report_buckets`).
 """
 import json
 import subprocess
@@ -135,4 +135,40 @@ def report(label, rows, threshold, stat):
                   f"({count} bucket(s), peak {peak:.1f})  [{kind}]")
     else:
         print(f"  no bucket reached {threshold}")
+    print()
+
+
+def report_buckets(label, series_by_stat, threshold, primary_stat="Average"):
+    """Print **one row per bucket** for a CPU series — the per-bucket complement to
+    `report()`'s aggregate summary.
+
+    `series_by_stat` maps a statistic name (e.g. "Average", "Maximum") to its
+    timestamp-sorted [(datetime, value)] list (from `series_from_datapoints`). One row
+    is printed per bucket timestamp (the union across stats), with a column per stat
+    and a breach `flag` when the `primary_stat` value is >= `threshold`, followed by a
+    one-line summary over `primary_stat`. The CloudWatch alarm evaluates the
+    **Average**, so `primary_stat` defaults to "Average" — a high per-minute Maximum
+    alone is *not* a breach.
+    """
+    print(f"=== {label} ===")
+    stats = list(series_by_stat.keys())
+    maps = {s: dict(series_by_stat[s]) for s in stats}
+    buckets = sorted(set().union(*[set(m) for m in maps.values()])) if maps else []
+    if not buckets:
+        print("  (no datapoints)")
+        print()
+        return
+    print(f"  {'bucket_start_utc':<18}" + "".join(f"{s + '_%':>12}" for s in stats) + "   flag")
+    for ts in buckets:
+        cells = "".join(
+            f"{(f'{maps[s][ts]:.2f}' if ts in maps[s] else '-'):>12}" for s in stats)
+        pv = maps.get(primary_stat, {}).get(ts)
+        flag = f">={threshold:g}" if (pv is not None and pv >= threshold) else ""
+        print(f"  {ts.strftime('%Y-%m-%d %H:%M'):<18}{cells}   {flag}")
+    pvals = [v for _, v in series_by_stat.get(primary_stat, [])]
+    if pvals:
+        n_breach = sum(1 for v in pvals if v >= threshold)
+        print(f"  summary ({primary_stat}): {len(buckets)} buckets | "
+              f"min={min(pvals):.2f} mean={sum(pvals) / len(pvals):.2f} max={max(pvals):.2f} | "
+              f"buckets >= {threshold:g}: {n_breach}")
     print()
