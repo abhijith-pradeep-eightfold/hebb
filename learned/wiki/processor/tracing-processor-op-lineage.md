@@ -38,9 +38,14 @@ A SMID matches the charset `[0-9a-fA-F-]{8,64}` (hex + dashes only). A `{group_i
 - `trace-processor-op` — use it to do this end-to-end from a SMID: it resolves the table/db_type from the model, walks the `processor_parent_msg_id` chain to the root, and prints each hop plus the root op and the root→target op trace.
 - `trace-solr-query-to-op` — use it when the SMIDs come from **Solr query traffic**: it pulls the `env='processor'` queries on a `core`+`shard_id`, walks each `sequence_message_id` to its root op (handling the non-UUID `{group_id}-hex` parent terminal), and groups identical chains by query volume.
 
+## GovCloud (us-gov-west-1) — the bundled tracer cannot reach the gov warehouse
+
+The `trace-processor-op` skill and its shared util `hebb_utils.processor.event_log` are **StarRocks-only by construction** (supported regions: `us-west-2`, `eu-central-1`, `ca-central-1`, `ap-southeast-2`) and **reject** `us-gov-west-1`. The model itself resolves the warehouse region-agnostically (`dwh.get_db_type_override(DBType.REDSHIFT_LOG.value)` → `dwh.get_db_tablename_with_schema_prefix('processor_event_log', db_type)` → `dwh.get_list(query, db_type=db_type)`), so a model-native read works in GovCloud (where the log warehouse is Redshift) **when run in-region** — the gov warehouse is **not** reachable from the agent box. Run the model-native walk on the in-region box (`pssh shared-gov`) as a hand-off; the lineage trace is corroboration, not a gating step. See [[../infra/govcloud-access|GovCloud access]].
+
 ## Related
 
 - [[processor-event-log|processor_event_log table]] — the columns this walk reads (`processor_msg_id`, `processor_parent_msg_id`, `operation0`, `status`, `queue_name`).
+- [[../infra/govcloud-access|GovCloud access]] — why this walk's bundled tracer can't reach the gov warehouse, and the region-agnostic in-region hand-off.
 - [[../data-warehouse/datawarehouse-adapter-factory|DataWarehouseAdapterFactory]] — why the read goes through the model's resolved db_type.
 - [[../vscode-repo/python-import-root|Python import root]] — `PYTHONPATH=$CODE_BASE/www` to import the model.
 - [[../data-warehouse/search-query-log|log.search_query_log]] — a processor-issued query's `sequence_message_id` **is** the SMID you trace here; that page's `env='processor'` breakdown is the upstream of this walk.

@@ -78,8 +78,11 @@ CloudWatch metric and alarm timestamps are **UTC**. (The PagerDuty console may *
 
 When correlating against [[../data-warehouse/search-query-log|log.search_query_log]], its `t_create` is also stored in **UTC** (so is `processor_event_log.t_create`) — the two are on the **same clock; no shift is needed**.
 
+> **RDS alarms are a different family.** This page is **EC2-host** CPU (`AWS/EC2`, `InstanceId` dimension, `Average`, 75% / 5-of-6 / 300 s). A **database** CPU page is `AWS/RDS CPUUtilization` on a `DBClusterIdentifier`+`Role` dimension, evaluated as `p75` ≥ 90% / 8-of-8 / 60 s, and is often in the GovCloud partition — a different namespace, dimension, statistic, threshold, and credentials. See [[../oncall/rds-cpu-high|RDS CPU too high]] and [[govcloud-access|GovCloud access]].
+
 ## Related
 
+- [[../oncall/rds-cpu-high|RDS CPU too high]] — the RDS (database) CPU alarm family — different namespace/dimension/statistic, and the Performance Insights load-split instead of a query-log correlation.
 - [[../solr/solr-collection-topology|Solr collection topology]] — what the alarm coordinate (collection/shard/replica/host) means and the host↔InstanceId mapping.
 - [[../solr/solr-shard-dns-lookup|Solr shard DNS lookup via search_config]] — how to get DNS hostnames (and then InstanceIds) when you start from a collection name + shard ID rather than an alarm.
 - [[../process/incident-metric-correlation|Incident metric-correlation discipline]] — using this CPU curve as the anchor before correlating to query load.

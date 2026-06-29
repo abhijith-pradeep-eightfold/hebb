@@ -64,9 +64,12 @@ def main(argv=None):
                    help="paths to saved get-metric-statistics JSON files")
     p.add_argument("--threshold", type=float, default=75.0,
                    help="breach threshold for the chosen statistic (default 75.0, "
-                        "the Solr CPU alarm threshold)")
-    p.add_argument("--stat", default="Average", choices=["Average", "Maximum", "Minimum", "Sum"],
-                   help="which statistic to analyze (default Average — matches the alarm)")
+                        "the Solr CPU alarm threshold; pass 90 for the RDS-CPU alarm)")
+    p.add_argument("--stat", default="Average",
+                   help="which statistic to analyze (default Average — matches the EC2 "
+                        "alarm). A standard statistic (Average/Maximum/Minimum/Sum) or an "
+                        "extended statistic / percentile such as p75 (the RDS-CPU alarm "
+                        "statistic), read from each datapoint's ExtendedStatistics.")
     p.add_argument("--label", action="append", default=[],
                    help="label for a file (repeatable, paired with json_files in order)")
     args = p.parse_args(argv)

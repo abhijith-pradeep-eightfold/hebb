@@ -8,6 +8,7 @@ knowledge_optional:
   - "[[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]"
   - "[[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]"
   - "[[../../../wiki/oncall/alarm-provisioning-failures|Alarm Provisioning Failures (oncall)]]"
+  - "[[../../../wiki/oncall/rds-cpu-high|RDS CPU too high (oncall)]]"
 ---
 
 # Post an oncall report to Slack

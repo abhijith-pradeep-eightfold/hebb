@@ -1,12 +1,14 @@
 ---
 name: config-get
 model: sonnet
-description: Read a value from the www global config via config.get — the minimal `from config import config; config.get('<config_name>', field_name='<field>')` read, run with the box's own credentials against the global config DB. Use whenever a task needs to read a config value from $CODE_BASE — "what is config X", "read the alarm_config entry for key Y", "does config Z have field F", "confirm a config entry exists / is missing", "what keys are in <config_name>". Encodes the critical lesson that config is BROADCAST to all regions, so you read it plainly — do NOT override EF_DEFAULT_REGION to "read a region's partition" and do NOT add any IAM / assume-role / STS handling (those overrides cause SignatureDoesNotMatch -> AccessDenied dead-ends). A missing field returns None.
+description: Read a value from the www global config via config.get — the minimal `from config import config; config.get('<config_name>', field_name='<field>')` read, run with the box's own credentials against the global config DB. Use whenever a task needs to read a config value from $CODE_BASE — "what is config X", "read the alarm_config entry for key Y", "does config Z have field F", "confirm a config entry exists / is missing", "what keys are in <config_name>", "resolve a pssh host (config.get('pssh_config')['HOSTNAME_DEV'])", "what instance does shared-gov map to", "read search_group_mappings for tenant T". Reach for this for ANY config.get read instead of writing a raw `python -c "from config import config; config.get(...)"` by hand. Encodes the critical lesson that config is BROADCAST to all regions, so you read it plainly — do NOT override EF_DEFAULT_REGION to "read a region's partition" and do NOT add any IAM / assume-role / STS handling (those overrides cause SignatureDoesNotMatch -> AccessDenied dead-ends). A missing field returns None.
 knowledge_required:
   - "[[../../../wiki/infra/config-get|Reading a config value (config.get)]]"
 knowledge_optional:
   - "[[../../../wiki/vscode-repo/python-import-root|Python import root ($CODE_BASE/www)]]"
   - "[[../../../wiki/oncall/alarm-provisioning-failures|Alarm Provisioning Failures (oncall)]]"
+  - "[[../../../wiki/infra/govcloud-access|GovCloud access]]"
+  - "[[../../../wiki/ats/ats-entity-cache|ats_entity_cache write path]]"
 ---
 
 # Read a config value (`config.get`)

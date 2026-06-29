@@ -8,6 +8,7 @@ The compiled, interlinked knowledge base for the `EightfoldAI/vscode` (`www`) co
 - [[oncall/queue-backed-up|Queue backed up]] — the SQS queue-depth ticket type: the metric-math CloudWatch alarm (`AWS/SQS ApproximateNumberOfMessagesVisible`, ≥50k), pulling the spike curve, then the **inflow-vs-drain fork** (depth is a stock = ∫(inflow−drain)) — the inflow branch (direct composition + correct distinct-parent attribution → trace root op → route owner) and the drain branch (op errors, processing latency, worker-pool contention, volume×latency).
 - [[oncall/solr-cpu-high|Solr CPU too high]] — the Solr-replica host-CPU ticket type: the `CPUUtilization` 75%/5-of-6 alarm, characterizing the spike per-replica (`solr-shard-cpu`), then the **indexing-vs-query split** (CPU is a flow metric = indexing + query work; `callerid='index'` vs all other callerids) — the rate-metric analog of the queue-depth fork — then the `callerid × group_id × env` driver breakdown, and the `sequence_message_id` bridge from a query surge back to its root **processor** op and owner.
 - [[oncall/alarm-provisioning-failures|Alarm Provisioning Failures]] — the daily-DAG alarm-provisioning ticket type: the `airflow-alarm_provisioning_failures.sum` `Sum >= 1` alarm where **N datapoints = N independent failing alarm keys**; enumerate the failing key via the **`[Action Needed] Alarm` email** (not CW Logs), read its traceback, confirm a missing-`alarm_config`-entry root cause with a plain `config.get`, and route to the owner.
+- [[oncall/rds-cpu-high|RDS CPU too high]] — the RDS cluster-role CPU ticket type: the `AWS/RDS CPUUtilization` p75 ≥90% / 8-of-8 alarm on `DBClusterIdentifier`+`Role` (often in GovCloud); pull both WRITER and READER curves, then **RDS Performance Insights** to split the DB load (wait events + top SQL + by host) — the **commit / redo-log-flush write-storm** signature — spot-check the actual SQL (query tags name the op/tenant/caller), trace to the producing op/code path, and route.
 
 ## Data warehouse
 
@@ -29,10 +30,16 @@ The compiled, interlinked knowledge base for the `EightfoldAI/vscode` (`www`) co
 - [[processor/queue-worker-pool-segregation|Processor worker-pool / queue-group segregation]] — processor capacity is segregated into named **queue groups** (`processor_worker_<instance_type>_ecs_config` → `worker_config: queue_group → {queues, max_count, scale_out}`, via `ecs_scaling_utils`); how to resolve a queue's pools + sibling queues to test drain-side contention. Region-scoped runtime config.
 - [[processor/trigger-event-fanout|trigger_event fan-out]] — the two mechanisms that re-broadcast entity changes as `trigger_event` messages: the interceptor `post_save` re-seed (dominant) and the `write_back_sor` retry self-loop (bounded at 6); why their `schedule_after_secs` delay forces distinct-parent attribution.
 
+## ATS
+
+- [[ats/ats-entity-cache|ats_entity_cache write path]] — the `AtsEntity` model on the **`log` DB** (`shared-log-cluster` family); `invalidate_ats_entity` writes one committed single-row upsert per call, driven per-deleted-position by the processor **`position_index`** op whose `pid` batches come from the bulk re-index CLI `re-index-db-positions.py`; the indexing gate is on/off (`search_group_mappings.do_not_index`), **not** a rate throttle. Owner: dp-integrations.
+
 ## Infra / telemetry
 
 - [[infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]] — pull a CloudWatch alarm definition and the underlying EC2 `CPUUtilization` timeseries via read-only AWS CLI; alarm config (75% Average, 5-of-6 300s), `InstanceId` dimension, CloudWatch is UTC.
 - [[infra/config-get|Reading a config value (`config.get`)]] — the minimal `from config import config; config.get('<name>', field_name='<field>')` read; config is **broadcast to all regions**, so read it plainly with the box's own creds — do NOT override `EF_DEFAULT_REGION` and do NOT add IAM/assume-role handling (both cause self-inflicted signing/access dead-ends).
+- [[infra/govcloud-access|GovCloud (us-gov-west-1) access]] — GovCloud is a **separate AWS partition** (`aws-us-gov`); AWS calls need the `GOV_AWS_*` creds (the commercial key can't reach it). CloudWatch / RDS / Performance Insights / Logs-Insights answer from the agent box; the gov **warehouse** does not — read it in-region via `pssh shared-gov` using the model's region-agnostic `dwh` path (the StarRocks-only bundled tracer rejects gov).
+- [[infra/rds-performance-insights|RDS Performance Insights]] — decompose a DB instance's load (`db.load.avg` = average active sessions) by wait event / SQL / user / host via `aws pi`; how to read AAS against the vCPU ceiling, the **commit / redo-log-flush write-storm** signature, and the **rate-vs-load two-axis** rule (why `ROLLBACK/sec ≈ COMMIT/sec` is the benign SQLAlchemy pool reset-on-return, not failing queries).
 
 ## vscode repo / environment
 
