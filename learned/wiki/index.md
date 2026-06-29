@@ -7,6 +7,7 @@ The compiled, interlinked knowledge base for the `EightfoldAI/vscode` (`www`) co
 - [[oncall/oncall-investigation|Oncall investigation — ticket types]] — the umbrella discipline for PagerDuty oncall tickets (read the alarm → characterize the metric → find the driver → trace & route to an owner), plus the catalog of ticket-type pages.
 - [[oncall/queue-backed-up|Queue backed up]] — the SQS queue-depth ticket type: the metric-math CloudWatch alarm (`AWS/SQS ApproximateNumberOfMessagesVisible`, ≥50k), pulling the spike curve, then the **inflow-vs-drain fork** (depth is a stock = ∫(inflow−drain)) — the inflow branch (direct composition + correct distinct-parent attribution → trace root op → route owner) and the drain branch (op errors, processing latency, worker-pool contention, volume×latency).
 - [[oncall/solr-cpu-high|Solr CPU too high]] — the Solr-replica host-CPU ticket type: the `CPUUtilization` 75%/5-of-6 alarm, characterizing the spike per-replica (`solr-shard-cpu`), then the **indexing-vs-query split** (CPU is a flow metric = indexing + query work; `callerid='index'` vs all other callerids) — the rate-metric analog of the queue-depth fork — then the `callerid × group_id × env` driver breakdown, and the `sequence_message_id` bridge from a query surge back to its root **processor** op and owner.
+- [[oncall/alarm-provisioning-failures|Alarm Provisioning Failures]] — the daily-DAG alarm-provisioning ticket type: the `airflow-alarm_provisioning_failures.sum` `Sum >= 1` alarm where **N datapoints = N independent failing alarm keys**; enumerate the failing key via the **`[Action Needed] Alarm` email** (not CW Logs), read its traceback, confirm a missing-`alarm_config`-entry root cause with a plain `config.get`, and route to the owner.
 
 ## Data warehouse
 
@@ -31,6 +32,7 @@ The compiled, interlinked knowledge base for the `EightfoldAI/vscode` (`www`) co
 ## Infra / telemetry
 
 - [[infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]] — pull a CloudWatch alarm definition and the underlying EC2 `CPUUtilization` timeseries via read-only AWS CLI; alarm config (75% Average, 5-of-6 300s), `InstanceId` dimension, CloudWatch is UTC.
+- [[infra/config-get|Reading a config value (`config.get`)]] — the minimal `from config import config; config.get('<name>', field_name='<field>')` read; config is **broadcast to all regions**, so read it plainly with the box's own creds — do NOT override `EF_DEFAULT_REGION` and do NOT add IAM/assume-role handling (both cause self-inflicted signing/access dead-ends).
 
 ## vscode repo / environment
 

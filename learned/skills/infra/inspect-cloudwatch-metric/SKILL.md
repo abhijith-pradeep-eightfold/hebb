@@ -5,6 +5,7 @@ description: Pull a CloudWatch alarm definition and its backing metric timeserie
 knowledge_optional:
   - "[[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]"
   - "[[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]"
+  - "[[../../../wiki/oncall/alarm-provisioning-failures|Alarm Provisioning Failures (oncall)]]"
 ---
 
 # Inspect CloudWatch alarm + metric (CPU or queue depth)

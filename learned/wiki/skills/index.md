@@ -24,8 +24,11 @@ The capabilities compiled into Hebb. Each entry names a skill the way Claude Cod
 
 ## infra
 
+- **`config-get`** — Read a value from the www global config via config.get — the minimal `from config import config; config.get('<config_name>', field_name='<field>')` read, run with the box's own credentials against the global config DB. Use whenever a task needs to read a config value from $CODE_BASE — "what is config X", "read the alarm_config entry for key Y", "does config Z have field F", "confirm a config entry exists / is missing", "what keys are in <config_name>". Encodes the critical lesson that config is BROADCAST to all regions, so you read it plainly — do NOT override EF_DEFAULT_REGION to "read a region's partition" and do NOT add any IAM / assume-role / STS handling (those overrides cause SignatureDoesNotMatch -> AccessDenied dead-ends). A missing field returns None.
+  - required knowledge: [[../../../wiki/infra/config-get|Reading a config value (config.get)]]
+  - optional knowledge: [[../../../wiki/vscode-repo/python-import-root|Python import root ($CODE_BASE/www)]], [[../../../wiki/oncall/alarm-provisioning-failures|Alarm Provisioning Failures (oncall)]]
 - **`inspect-cloudwatch-metric`** — Pull a CloudWatch alarm definition and its backing metric timeseries via read-only AWS CLI, then tabulate the series and flag breach buckets — for EC2 host CPU (`CPUUtilization`) or SQS queue depth (`AWS/SQS ApproximateNumberOfMessagesVisible`, including metric-math alarms). Use whenever you need to confirm or characterize an alarm against the real metric curve — a "Solr CPU Util Too High" PagerDuty page, an EC2 CPU spike, a "Queue backed up" page, or any CloudWatch alarm you want to verify — to establish the true spike window and shape (sustained breach vs. one-minute blip) before correlating it to anything else. Reach for this whenever a task hands you a CloudWatch alarm name, an EC2 instance/host, an SQS queue, or a PagerDuty CPU/queue incident and asks what actually happened. Also use as the second step when you have already resolved DNS hostnames to InstanceIds (e.g. via solr-shard-dns-lookup) and want to pull the CPU curve — skip describe-alarms and go straight to get-metric-statistics. It can also pull the alarm's **state-transition history** to answer "is this page chronic or rare" — the most recent trigger (this incident's onset), the prior trigger, and the gap between them — for any CloudWatch alarm (CPU, queue depth, etc.).
-  - optional knowledge: [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]], [[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]
+  - optional knowledge: [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]], [[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]], [[../../../wiki/oncall/alarm-provisioning-failures|Alarm Provisioning Failures (oncall)]]
 
 ## maintainer
 
@@ -35,9 +38,12 @@ The capabilities compiled into Hebb. Each entry names a skill the way Claude Cod
 
 ## oncall
 
+- **`oncall-alarm-provisioning-failures`** — High-level oncall runbook for a "[<region>] [P2] Alarm Provisioning Failures" PagerDuty page — the daily alarm_manager_alerts DAG failing to provision one or more CloudWatch alarms. Use when you pick up an "Alarm Provisioning Failures" page and want the end-to-end investigation, not just one step — characterize the failing-key count (N datapoints = N independent failing alarm keys), enumerate the failing key via the "[Action Needed] Alarm" owner email (not CloudWatch Logs), read its traceback, confirm a missing-alarm_config-entry root cause with a plain config.get, and route to the owner. Sequences external-context-puller -> inspect-cloudwatch-metric -> config-get -> codeowners-owner -> oncall-post-report. Reach for this whenever an "Alarm Provisioning Failures" alarm pages.
+  - required knowledge: [[../../../wiki/oncall/alarm-provisioning-failures|Alarm Provisioning Failures (oncall)]]
+  - optional knowledge: [[../../../wiki/oncall/oncall-investigation|Oncall investigation — ticket types]], [[../../../wiki/infra/config-get|Reading a config value (config.get)]]
 - **`oncall-post-report`** — Post a finished oncall investigation report back to the PagerDuty Slack thread — create a Slack Canvas with the full table-structured report and reply with a concise summary in the alert thread. Use as the final step of any oncall ticket (queue backed up, Solr CPU too high, etc.) once the investigation is done and the user asks to "post the report in Slack" / "share this in the PD thread" / "post to the oncall channel". Encodes two safety rules every outward-facing oncall post must follow: confirm the destination/surface before posting, and render every person/team/customer reference as plain text (never an @-mention) so the post pages no one.
   - required knowledge: [[../../../wiki/oncall/oncall-investigation|Oncall investigation — ticket types]]
-  - optional knowledge: [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]], [[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]
+  - optional knowledge: [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]], [[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]], [[../../../wiki/oncall/alarm-provisioning-failures|Alarm Provisioning Failures (oncall)]]
 - **`oncall-queue-backed-up`** — High-level oncall runbook for a "Queue backed up" (SQS queue-depth) PagerDuty page. Use when you pick up a "[<region>] Queue backed up-<queue>" alarm and want the end-to-end investigation, not just one step — confirm and characterize the queue-depth spike, find which operation0/group flooded the queue, trace it to its root processor op, and route to the owning team. Sequences inspect-cloudwatch-metric → query-processor-event-log → trace-processor-op → codeowners-owner. Reach for this whenever an SQS queue-backed-up / queue-depth alarm pages.
   - required knowledge: [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]
   - optional knowledge: [[../../../wiki/oncall/oncall-investigation|Oncall investigation — ticket types]]
@@ -64,7 +70,7 @@ The capabilities compiled into Hebb. Each entry names a skill the way Claude Cod
 
 - **`codeowners-owner`** — >-
   - required knowledge: [[../../../wiki/repo/codeowners-ownership|CODEOWNERS ownership resolution]]
-  - optional knowledge: [[../../../wiki/processor/op-registry|op_registry: operation name → source file]], [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]], [[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]
+  - optional knowledge: [[../../../wiki/processor/op-registry|op_registry: operation name → source file]], [[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]], [[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]], [[../../../wiki/oncall/alarm-provisioning-failures|Alarm Provisioning Failures (oncall)]]
 
 ## solr
 

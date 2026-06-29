@@ -16,6 +16,7 @@ Anchor on the real metric first, then correlate — the general method is [[../p
 
 - **Queue backed up** (SQS queue-depth alarm) → [[queue-backed-up|Queue backed up]].
 - **Solr CPU too high** (EC2 host-CPU alarm on a Solr replica) → [[solr-cpu-high|Solr CPU too high]].
+- **Alarm Provisioning Failures** (daily-DAG alarm-provisioning failure on the custom `airflow` metric; N datapoints = N independent failing alarm keys) → [[alarm-provisioning-failures|Alarm Provisioning Failures]].
 
 New ticket types are added here as their incidents are compiled — each as its own page with the alarm, the flow, and the automating skills/scripts.
 
@@ -43,6 +44,7 @@ The `oncall-post-report` skill encodes both rules; **use it** to create a Canvas
 
 - `oncall-queue-backed-up` — the high-level runbook skill for the *Queue backed up* ticket type (each ticket type has one such per-type runbook skill).
 - `oncall-solr-cpu-high` — the high-level runbook skill for the *Solr CPU too high* ticket type (characterize the CPU spike → split indexing vs query → break down the drivers → trace any processor source → route).
+- `oncall-alarm-provisioning-failures` — the high-level runbook skill for the *Alarm Provisioning Failures* ticket type (characterize the failing-key count → enumerate the key via the `[Action Needed] Alarm` email → confirm the missing-config root cause with a plain config read → route to the owner).
 - `oncall-post-report` — use it to post the finished table-structured report back to the PagerDuty Slack thread (Canvas + concise threaded reply), with a confirm-before-post gate and plain-text (non-paging) references. Applies to every ticket type.
 
 ## Related
