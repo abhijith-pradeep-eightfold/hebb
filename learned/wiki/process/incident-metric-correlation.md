@@ -29,6 +29,7 @@ The non-correlation rule sharpens here: if **inflow is flat** while the stock sp
 ## Related
 
 - [[../oncall/queue-backed-up|Queue backed up (oncall)]] — the stock-metric (queue-depth) worked example: inflow-vs-drain fork and the drain-side diagnostics.
+- [[../oncall/redis-errors-detected|Redis Error Detected (oncall)]] — a worked *non-correlation*: the runbook's log query returns zero on a real metric spike because the counter and the log line are independent sinks; the metric curve + alarm history carry the finding.
 - [[../infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + metric access]] — pulling and confirming the primary metric.
 - [[../solr/solr-collection-topology|Solr collection topology]] — what the alarm coordinate means; which hosts a shard spans.
 - [[../data-warehouse/search-query-log|log.search_query_log table]] — the secondary source; `t_create` timezone and the scoping columns used to break down load.

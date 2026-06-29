@@ -117,6 +117,53 @@ def fetch_rds_cpu(db_cluster_identifier, role, start_time, end_time, region,
             f"{db_cluster_identifier}/{role}: {exc}") from exc
 
 
+def fetch_metric_sum(namespace, metric_name, start_time, end_time, region,
+                     dimensions=None, period=300, statistics=("Sum",)):
+    """Pull a generic CloudWatch metric curve (read-only) for an arbitrary
+    namespace / metric / dimensions / statistic.
+
+    Unlike `fetch_cpu`/`fetch_rds_cpu` (which hardwire `AWS/EC2`/`AWS/RDS
+    CPUUtilization`), this is the general `get-metric-statistics` call used for
+    custom-namespace counter metrics such as the per-namespace Redis-errors counter
+    (`namespace='ranking_service'`, `metric_name='prod-ranking-service-redis-errors.sum'`,
+    `statistics=('Sum',)`, no dimensions) — see the wiki page `oncall/redis-errors-detected`.
+
+    `dimensions` is an optional list of `(Name, Value)` tuples (omit for a metric
+    with no dimensions, like the Redis-errors counter). `start_time`/`end_time` are
+    ISO-8601 UTC strings. Returns the parsed AWS JSON dict. Raises CloudWatchError
+    on failure.
+    """
+    cmd = [
+        "aws", "cloudwatch", "get-metric-statistics",
+        "--region", region,
+        "--namespace", namespace,
+        "--metric-name", metric_name,
+        "--start-time", start_time,
+        "--end-time", end_time,
+        "--period", str(period),
+        "--statistics", *statistics,
+        "--output", "json",
+    ]
+    if dimensions:
+        cmd += ["--dimensions"] + [f"Name={n},Value={v}" for n, v in dimensions]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except Exception as exc:  # noqa: BLE001
+        raise CloudWatchError(
+            f"get-metric-statistics could not run for {namespace}/{metric_name}: {exc}"
+        ) from exc
+    if result.returncode != 0:
+        raise CloudWatchError(
+            f"get-metric-statistics failed for {namespace}/{metric_name}: "
+            f"{result.stderr.strip()}")
+    try:
+        return json.loads(result.stdout)
+    except Exception as exc:  # noqa: BLE001
+        raise CloudWatchError(
+            f"could not parse get-metric-statistics output for "
+            f"{namespace}/{metric_name}: {exc}") from exc
+
+
 def parse_ts(s):
     """Parse an AWS ISO-8601 timestamp (e.g. '2026-06-15T08:20:00Z' or with offset)."""
     s = s.strip()

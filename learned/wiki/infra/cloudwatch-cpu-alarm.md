@@ -83,6 +83,7 @@ When correlating against [[../data-warehouse/search-query-log|log.search_query_l
 ## Related
 
 - [[../oncall/rds-cpu-high|RDS CPU too high]] — the RDS (database) CPU alarm family — different namespace/dimension/statistic, and the Performance Insights load-split instead of a query-log correlation.
+- [[../oncall/redis-errors-detected|Redis Error Detected]] — a counter-metric alarm family (per-namespace `redis-errors` `Sum`) sharing the CloudWatch-is-UTC + alarm-state-history mechanics; its crux is that the metric counter and the error log line are independent sinks.
 - [[../solr/solr-collection-topology|Solr collection topology]] — what the alarm coordinate (collection/shard/replica/host) means and the host↔InstanceId mapping.
 - [[../solr/solr-shard-dns-lookup|Solr shard DNS lookup via search_config]] — how to get DNS hostnames (and then InstanceIds) when you start from a collection name + shard ID rather than an alarm.
 - [[../process/incident-metric-correlation|Incident metric-correlation discipline]] — using this CPU curve as the anchor before correlating to query load.
