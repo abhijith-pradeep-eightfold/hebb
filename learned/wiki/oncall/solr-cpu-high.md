@@ -72,6 +72,7 @@ Report a Solr-CPU ticket as a **detailed, table-structured report**, not prose �
 - `inspect-cloudwatch-metric` — use it to read the alarm definition and its history (first-trigger time, prior-trigger cadence — how chronic the page is).
 - `query-solr-load` — use it for the indexing-vs-query split (`--mode split`) and the per-source `callerid × group_id × env` driver breakdown (`--mode drivers`) against `log.search_query_log`.
 - `trace-processor-op` — use it to walk a culprit `sequence_message_id` SMID to its root processor op when the surging `env` is `processor`.
+- `trace-solr-query-to-op` — use it to do the whole `env='processor'` step in one call: it pulls a `core`+`shard_id`'s processor-issued query SMIDs, traces each to its root op, and groups identical chains by query volume (the fused breakdown→trace path).
 - `codeowners-owner` — use it to resolve the owning team/author of the root/culprit op's source file.
 - `oncall-post-report` — use it to post the finished table-structured report back to the PagerDuty Slack thread (Canvas + concise threaded reply), with a confirm-before-post gate and plain-text (non-paging) references.
 

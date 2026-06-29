@@ -351,5 +351,13 @@ def walk_parent_chain(target, max_depth=50, region=None):
         hop = hop_from_rows(smid, depth, rows)
         chain.append(hop)
         smid = hop["parent"]
+        # A parent that is not SMID-shaped (e.g. an `import` op's {group_id}-hex dispatch
+        # id, like 'jp-ey.com-f68b…') has no row to fetch — fetch_rows_by_msg_id would
+        # raise on it and abort the whole trace. Stop here instead: this hop is the
+        # deepest knowable op; annotate why the walk ended and keep it as the root.
+        if smid and not is_valid_smid(smid):
+            hop["_note"] = ("parent %r is a non-UUID dispatch id ({group_id}-hex form); "
+                            "cannot walk further" % smid)
+            break
         depth += 1
     return {"db_type": _DB_TYPE, "table": _TABLE, "chain": chain}

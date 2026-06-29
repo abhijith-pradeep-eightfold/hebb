@@ -185,9 +185,48 @@ def driver_breakdown(core, shard_id, since, until, baseline_since, baseline_unti
     for r in rows:
         sc = float(r.get("spike_cnt") or 0)
         bc = float(r.get("base_cnt") or 0)
-        r["spike_per_min"] = round(sc / spike_min, 2)
-        r["base_per_min"] = round(bc / base_min, 2)
-        r["ratio"] = round(r["spike_per_min"] / r["base_per_min"], 2) if bc > 0 else None
+        # Divide the UNROUNDED rates and guard on the actual denominator. base_per_min is
+        # round(bc / base_min, 2), which collapses a small-but-nonzero baseline count to
+        # 0.0 over a long baseline window — so guarding on `bc > 0` (the raw count) and
+        # then dividing by base_per_min raised ZeroDivisionError. Here ratio=None still
+        # flags a NEW source (zero baseline); a tiny baseline yields a large finite ratio.
+        spm = sc / spike_min
+        bpm = bc / base_min
+        r["spike_per_min"] = round(spm, 2)
+        r["base_per_min"] = round(bpm, 2)
+        r["ratio"] = round(spm / bpm, 2) if bpm > 0 else None
     return {"table": TABLE, "core": core, "shard_id": int(shard_id), "dims": dims,
             "stream": stream, "spike_window": [since, until],
             "baseline_window": [baseline_since, baseline_until], "rows": rows}
+
+
+def processor_query_smids(core, shard_id, since, until, limit=500,
+                          cache_ttl_secs=None, region=None):
+    """Distinct processor SMIDs behind a Solr core+shard's *query* traffic.
+
+    For one ``core`` + ``shard_id`` over ``[since, until]``, return the
+    ``env='processor'`` query rows (``callerid <> 'index'`` — read traffic, not
+    indexing) grouped by ``sequence_message_id`` (the processor SMID that issued each
+    query — the join key to processor_event_log). Each row carries the query count that
+    SMID produced plus its ``group_id`` / ``callerid``, highest-volume SMIDs first.
+    Feed each ``sequence_message_id`` to
+    ``hebb_utils.processor.event_log.walk_parent_chain`` to reach its root op — this is
+    the env=processor -> sequence_message_id -> root-op bridge (see the wiki page
+    learned/wiki/data-warehouse/search-query-log, "sequence_message_id").
+
+    Returns ``{"table","core","shard_id","window":[since,until],
+    "rows":[{sequence_message_id, group_id, callerid, query_cnt}]}`` (read-only;
+    every interpolated value is charset/format-validated).
+    """
+    scope = _scope_clause(core, shard_id)
+    _validate_ts("since", since)
+    _validate_ts("until", until)
+    q = (f"SELECT sequence_message_id, group_id, callerid, COUNT(*) AS query_cnt "
+         f"FROM {TABLE} WHERE {scope} "
+         f"AND t_create >= '{since}' AND t_create <= '{until}' "
+         f"AND env = 'processor' AND callerid <> '{INDEX_CALLERID}' "
+         f"AND sequence_message_id IS NOT NULL AND sequence_message_id <> '' "
+         f"GROUP BY sequence_message_id, group_id, callerid "
+         f"ORDER BY query_cnt DESC LIMIT {int(limit)}")
+    return {"table": TABLE, "core": core, "shard_id": int(shard_id),
+            "window": [since, until], "rows": run_select(q, cache_ttl_secs, region=region)}

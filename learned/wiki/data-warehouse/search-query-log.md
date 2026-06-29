@@ -16,7 +16,7 @@ DDL: `www/datawarehouse/starrocks/sql/fact_tables/search_query_log.sql` — `CRE
 | `api` | varchar(200) | |
 | `search_host` | varchar(200) | |
 | `core` | varchar(200) | |
-| `shard_id` | int | |
+| `shard_id` | int | per-**collection** shard number — **not globally unique**; pair with `core` (see [[#discovering-the-core-for-a-shard_id|below]]) |
 | `is_instant` | boolean | |
 | `callerid` | varchar(200) | the calling **feature / code path**; `callerid='index'` = indexing — see [[#callerid|below]] |
 | `rows_requested` | int | |
@@ -50,6 +50,20 @@ WHERE t_create >= DATE_SUB(NOW(), INTERVAL 6 HOUR)
   AND group_id = 'volkscience.com'
   AND core = 'profiles'
 ```
+
+### Discovering the core for a shard_id
+
+`shard_id` is numbered **within each collection**, not globally — so a bare `shard_id = 10` does not identify a collection (several cores can each have a shard 10). When a task names a shard only by number, discover which `core` owns it before scoping anything to it:
+
+```sql
+SELECT core, shard_id, COUNT(*) AS query_count
+FROM log.search_query_log
+WHERE shard_id = 10 AND t_create >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+GROUP BY core, shard_id
+ORDER BY query_count DESC
+```
+
+The mapping reflects current sharding and is **not stable** — look it up from the log each time rather than memorizing it.
 
 ### Timestamp semantics (gotcha)
 
@@ -91,6 +105,8 @@ The **originating service / environment** of the query — the single most usefu
 
 For a query issued by the processor (`env='processor'`), this carries the **processor SMID (`processor_msg_id`)** of the message that issued it. It is the **join key** from this table to [[../processor/processor-event-log|processor_event_log]]: feed a culprit `sequence_message_id` into the `trace-processor-op` skill to walk `processor_parent_msg_id` to the root processor op behind a query surge (and from there to its owner). This is how a Solr query surge is routed back to a processor batch job — see [[../oncall/solr-cpu-high|Solr CPU too high]].
 
+**Proactively chain after a breakdown — don't stop at `env='processor'`.** Whenever a `callerid × group_id × env` driver breakdown surfaces `env='processor'` as a contributor, the breakdown is *not* the answer to "what is driving this load" — the answer is the processor op behind it. Pull the `sequence_message_id`s of those rows and trace each to its root op as the **expected next step**, without waiting to be asked. Some chains terminate early at a [[../processor/tracing-processor-op-lineage#non-uuid-parent-the-walk-terminates-early|non-UUID `{group_id}-hex` parent]] (e.g. `import` ops) — that is a real ending, and the child's own op is the deepest knowable op.
+
 ## Defined across three warehouses
 
 The same logical table also has DDL for:
@@ -107,6 +123,7 @@ On 2026-06-24 at 13:38 (us-west-2 StarRocks), `COUNT(*)` over `t_create >= DATE_
 ## Related skills
 
 - `query-solr-load` — use it to pull the per-bucket indexing-vs-query split (`callerid='index'` vs all other callerids, `--mode split`) and the per-source `callerid × group_id × env` driver breakdown (`--mode drivers`) for a `core`+`shard_id`, the analytical core of a Solr-CPU investigation.
+- `trace-solr-query-to-op` — use it to chain the `env='processor'` query traffic on a `core`+`shard_id` straight to the **root processor ops** behind it (pulls the `sequence_message_id`s, walks each to its root op, groups identical chains by query volume) — the proactive follow-on when a breakdown surfaces `env='processor'`.
 
 ## Related
 
@@ -117,4 +134,4 @@ On 2026-06-24 at 13:38 (us-west-2 StarRocks), `COUNT(*)` over `t_create >= DATE_
 - [[../processor/processor-event-log|processor_event_log]] — joined via `sequence_message_id` to trace a processor-issued query surge to its root op.
 
 ---
-*Sources:* `www/datawarehouse/starrocks/sql/fact_tables/search_query_log.sql`, `www/datawarehouse/sql/redshift_log_tables/search_query_log.sql`, `www/datawarehouse/databricks/analytics_project/src/sql/fact_tables/search_query_log.sql`. Witnesses: `inputs/2026-06-24-starrocks-query-count.md`, `inputs/2026-06-24-solr-query-buckets.md`, `inputs/2026-06-26-queue-backed-up-batch-requests.md` (`t_create` confirmed **UTC**), `inputs/2026-06-29-profiles-shard21-r1-cpu.md` (`env`, `callerid='index'`, `sequence_message_id`→processor SMID).
+*Sources:* `www/datawarehouse/starrocks/sql/fact_tables/search_query_log.sql`, `www/datawarehouse/sql/redshift_log_tables/search_query_log.sql`, `www/datawarehouse/databricks/analytics_project/src/sql/fact_tables/search_query_log.sql`. Witnesses: `inputs/2026-06-24-starrocks-query-count.md`, `inputs/2026-06-24-solr-query-buckets.md`, `inputs/2026-06-26-queue-backed-up-batch-requests.md` (`t_create` confirmed **UTC**), `inputs/2026-06-29-profiles-shard21-r1-cpu.md` (`env`, `callerid='index'`, `sequence_message_id`→processor SMID), `inputs/2026-06-29-eu-central-1-shard10-processor-breakdown.md` (`shard_id` per-collection ambiguity; proactive `env='processor'`→root-op chaining).
