@@ -12,8 +12,11 @@ two top-level `utils` packages cannot coexist on one `sys.path`. See
 learned/hebb_utils/README.md.
 
 Two halves:
-  - `fetch_cpu(...)`  — a read-only `aws cloudwatch get-metric-statistics` call,
-    returning the parsed AWS JSON dict. Raises `CloudWatchError` on failure.
+  - `fetch_cpu(...)`  — a read-only `aws cloudwatch get-metric-statistics` call for
+    `AWS/EC2 CPUUtilization` (dimension `InstanceId`), returning the parsed AWS JSON
+    dict. `fetch_rds_cpu(...)` is the `AWS/RDS CPUUtilization` variant (dimension
+    `DBClusterIdentifier` + `Role`, extended statistic `p75`) used by the RDS-CPU
+    oncall. Both raise `CloudWatchError` on failure.
   - the analysis functions (`series_from_datapoints`, `load_series`,
     `contiguous_breaches`, `report`, `report_buckets`) — pure transforms over the
     datapoints that sort by timestamp, summarise min/max/mean, flag breach blocks as
@@ -64,6 +67,103 @@ def fetch_cpu(instance_id, start_time, end_time, region,
             f"could not parse get-metric-statistics output for {instance_id}: {exc}") from exc
 
 
+def fetch_rds_cpu(db_cluster_identifier, role, start_time, end_time, region,
+                  period=60, extended_statistics=("p75",), statistics=("Maximum",)):
+    """Pull `AWS/RDS CPUUtilization` datapoints for one cluster role (read-only).
+
+    The RDS-CPU oncall alarm tracks a cluster role's CPU on the dimensions
+    `DBClusterIdentifier` + `Role` (WRITER/READER), evaluated as an **extended
+    statistic** (`p75`), not `Average` — see the wiki page `oncall/rds-cpu-high`.
+    `role` is "WRITER" or "READER". `extended_statistics` (e.g. `p75`) come back
+    under each datapoint's `ExtendedStatistics` dict; `statistics` (e.g. `Maximum`)
+    come back as top-level keys. `start_time`/`end_time` are ISO-8601 UTC strings.
+    Returns the parsed AWS JSON dict. Raises CloudWatchError on failure.
+
+    Pass the GovCloud creds + `--region us-gov-west-1` (via the environment) for a
+    gov alarm — see the wiki page `infra/govcloud-access`.
+    """
+    cmd = [
+        "aws", "cloudwatch", "get-metric-statistics",
+        "--region", region,
+        "--namespace", "AWS/RDS",
+        "--metric-name", "CPUUtilization",
+        "--dimensions",
+        f"Name=DBClusterIdentifier,Value={db_cluster_identifier}",
+        f"Name=Role,Value={role}",
+        "--start-time", start_time,
+        "--end-time", end_time,
+        "--period", str(period),
+        "--output", "json",
+    ]
+    if statistics:
+        cmd += ["--statistics", *statistics]
+    if extended_statistics:
+        cmd += ["--extended-statistics", *extended_statistics]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except Exception as exc:  # noqa: BLE001
+        raise CloudWatchError(
+            f"get-metric-statistics could not run for {db_cluster_identifier}/{role}: {exc}"
+        ) from exc
+    if result.returncode != 0:
+        raise CloudWatchError(
+            f"get-metric-statistics failed for {db_cluster_identifier}/{role}: "
+            f"{result.stderr.strip()}")
+    try:
+        return json.loads(result.stdout)
+    except Exception as exc:  # noqa: BLE001
+        raise CloudWatchError(
+            f"could not parse get-metric-statistics output for "
+            f"{db_cluster_identifier}/{role}: {exc}") from exc
+
+
+def fetch_metric_sum(namespace, metric_name, start_time, end_time, region,
+                     dimensions=None, period=300, statistics=("Sum",)):
+    """Pull a generic CloudWatch metric curve (read-only) for an arbitrary
+    namespace / metric / dimensions / statistic.
+
+    Unlike `fetch_cpu`/`fetch_rds_cpu` (which hardwire `AWS/EC2`/`AWS/RDS
+    CPUUtilization`), this is the general `get-metric-statistics` call used for
+    custom-namespace counter metrics such as the per-namespace Redis-errors counter
+    (`namespace='ranking_service'`, `metric_name='prod-ranking-service-redis-errors.sum'`,
+    `statistics=('Sum',)`, no dimensions) — see the wiki page `oncall/redis-errors-detected`.
+
+    `dimensions` is an optional list of `(Name, Value)` tuples (omit for a metric
+    with no dimensions, like the Redis-errors counter). `start_time`/`end_time` are
+    ISO-8601 UTC strings. Returns the parsed AWS JSON dict. Raises CloudWatchError
+    on failure.
+    """
+    cmd = [
+        "aws", "cloudwatch", "get-metric-statistics",
+        "--region", region,
+        "--namespace", namespace,
+        "--metric-name", metric_name,
+        "--start-time", start_time,
+        "--end-time", end_time,
+        "--period", str(period),
+        "--statistics", *statistics,
+        "--output", "json",
+    ]
+    if dimensions:
+        cmd += ["--dimensions"] + [f"Name={n},Value={v}" for n, v in dimensions]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except Exception as exc:  # noqa: BLE001
+        raise CloudWatchError(
+            f"get-metric-statistics could not run for {namespace}/{metric_name}: {exc}"
+        ) from exc
+    if result.returncode != 0:
+        raise CloudWatchError(
+            f"get-metric-statistics failed for {namespace}/{metric_name}: "
+            f"{result.stderr.strip()}")
+    try:
+        return json.loads(result.stdout)
+    except Exception as exc:  # noqa: BLE001
+        raise CloudWatchError(
+            f"could not parse get-metric-statistics output for "
+            f"{namespace}/{metric_name}: {exc}") from exc
+
+
 def parse_ts(s):
     """Parse an AWS ISO-8601 timestamp (e.g. '2026-06-15T08:20:00Z' or with offset)."""
     s = s.strip()
@@ -72,12 +172,33 @@ def parse_ts(s):
     return datetime.fromisoformat(s)
 
 
+def _datapoint_value(p, stat):
+    """Read `stat` from one AWS datapoint, supporting extended statistics.
+
+    A standard statistic (`Average`, `Maximum`, …) is a top-level datapoint key.
+    An **extended statistic** (a percentile such as `p75`, used by the RDS-CPU
+    alarm) lives under the datapoint's `ExtendedStatistics` dict instead. Try the
+    top level first, then the extended dict, so EC2 (`Average`) and RDS (`p75`)
+    series both load through the same `series_from_datapoints`/`load_series` path.
+    """
+    if stat in p:
+        return p[stat]
+    ext = p.get("ExtendedStatistics")
+    if isinstance(ext, dict) and stat in ext:
+        return ext[stat]
+    return None
+
+
 def series_from_datapoints(datapoints, stat):
-    """Convert AWS `Datapoints` to a timestamp-sorted [(datetime, value)] list for `stat`."""
+    """Convert AWS `Datapoints` to a timestamp-sorted [(datetime, value)] list for `stat`.
+
+    `stat` may be a standard statistic (top-level key) or an extended statistic /
+    percentile such as `p75` (read from the datapoint's `ExtendedStatistics`).
+    """
     rows = []
     for p in datapoints:
         ts = p.get("Timestamp")
-        val = p.get(stat)
+        val = _datapoint_value(p, stat)
         if ts is None or val is None:
             continue
         rows.append((parse_ts(ts), float(val)))

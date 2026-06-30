@@ -1,10 +1,15 @@
 ---
 name: inspect-cloudwatch-metric
 model: sonnet
-description: Pull a CloudWatch alarm definition and its backing metric timeseries via read-only AWS CLI, then tabulate the series and flag breach buckets — for EC2 host CPU (`CPUUtilization`) or SQS queue depth (`AWS/SQS ApproximateNumberOfMessagesVisible`, including metric-math alarms). Use whenever you need to confirm or characterize an alarm against the real metric curve — a "Solr CPU Util Too High" PagerDuty page, an EC2 CPU spike, a "Queue backed up" page, or any CloudWatch alarm you want to verify — to establish the true spike window and shape (sustained breach vs. one-minute blip) before correlating it to anything else. Reach for this whenever a task hands you a CloudWatch alarm name, an EC2 instance/host, an SQS queue, or a PagerDuty CPU/queue incident and asks what actually happened. Also use as the second step when you have already resolved DNS hostnames to InstanceIds (e.g. via solr-shard-dns-lookup) and want to pull the CPU curve — skip describe-alarms and go straight to get-metric-statistics. It can also pull the alarm's **state-transition history** to answer "is this page chronic or rare" — the most recent trigger (this incident's onset), the prior trigger, and the gap between them — for any CloudWatch alarm (CPU, queue depth, etc.).
+description: Pull a CloudWatch alarm definition and its backing metric timeseries via read-only AWS CLI, then tabulate the series and flag breach buckets — for EC2 host CPU (`AWS/EC2 CPUUtilization`), RDS database CPU (`AWS/RDS CPUUtilization`, the WRITER/READER p75 alarm), SQS queue depth (`AWS/SQS ApproximateNumberOfMessagesVisible`, including metric-math alarms), or a custom-namespace counter metric (e.g. the per-namespace Redis-errors counter `prod-<svc>-redis-errors.sum`, `Sum > 100`, behind a "Redis Errors Detected" page). Use whenever you need to confirm or characterize an alarm against the real metric curve — a "Solr CPU Util Too High" PagerDuty page, an EC2 CPU spike, an "RDS CPU Utilization Too High" page (WRITER/READER, often in GovCloud), a "Queue backed up" page, a "Redis Errors Detected - <namespace>" page, or any CloudWatch alarm you want to verify — to establish the true spike window and shape (sustained breach vs. one-minute blip) before correlating it to anything else. Reach for this whenever a task hands you a CloudWatch alarm name, an EC2 instance/host, an RDS cluster, an SQS queue, a custom counter metric, or a PagerDuty CPU/queue/Redis incident and asks what actually happened. Also use as the second step when you have already resolved DNS hostnames to InstanceIds (e.g. via solr-shard-dns-lookup) and want to pull the CPU curve — skip describe-alarms and go straight to get-metric-statistics. It can also pull the alarm's **state-transition history** to answer "is this page chronic or rare" — the most recent trigger (this incident's onset), the prior trigger, and the gap between them — for any CloudWatch alarm (CPU, queue depth, Redis errors, etc.).
 knowledge_optional:
   - "[[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]"
   - "[[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]"
+  - "[[../../../wiki/oncall/alarm-provisioning-failures|Alarm Provisioning Failures (oncall)]]"
+  - "[[../../../wiki/oncall/rds-cpu-high|RDS CPU too high (oncall)]]"
+  - "[[../../../wiki/oncall/redis-errors-detected|Redis Error Detected (oncall)]]"
+  - "[[../../../wiki/infra/rds-performance-insights|RDS Performance Insights]]"
+  - "[[../../../wiki/infra/govcloud-access|GovCloud access]]"
 ---
 
 # Inspect CloudWatch alarm + metric (CPU or queue depth)
@@ -64,7 +69,28 @@ PYTHONPATH="$CODE_BASE" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/pull_queue
 ```
 It reads the alarm threshold (`describe-alarms`), pulls `Maximum`+`Average` per 900s bucket (`get-metric-statistics`), tabulates the curve, marks buckets at/over threshold with `<<<`, and reports the peak as a % of threshold. CloudWatch is **UTC**. Then attribute the backlog to an op/tenant with the **`query-processor-event-log`** skill (`--queue <queue> --event-type message_dispatched --count-by operation0,group_id`).
 
+## RDS database-CPU alarms ("RDS CPU Utilization Too High")
+
+For an [[../../../wiki/oncall/rds-cpu-high|RDS CPU too high]] page the alarm is **`AWS/RDS CPUUtilization`** on the dimensions `DBClusterIdentifier` + `Role` (WRITER/READER), evaluated as the **extended statistic `p75`** (not `Average`), threshold 90% / 8-of-8 / 60s — a *different* family from the EC2 host-CPU alarm above. Pull the role curve(s) and flag breach buckets in one **bundled, unattended** call (defaults to **both** WRITER and READER, so a cluster-wide rise separates from a writer-only one):
+```bash
+"$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/pull_rds_cpu.py" --cluster <DBClusterIdentifier> --region <region> --start <ISO8601Z> --end <ISO8601Z>
+```
+It pulls `CPUUtilization` (p75 via `--extended-statistics`, plus Maximum) per 60s bucket and prints the per-role breach report (min/max/mean, breach count, contiguous SUSTAINED/blip blocks). CloudWatch is **UTC**. The `--threshold` defaults to 90 and `--stat` to p75 (the RDS-CPU alarm). For a **GovCloud** alarm (`us-gov-west-1`), export the GOV creds first — see [[../../../wiki/infra/govcloud-access|GovCloud access]]:
+```bash
+export AWS_ACCESS_KEY_ID="$GOV_AWS_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$GOV_AWS_SECRET_ACCESS_KEY"
+```
+Then **split the DB load** (wait events / SQL / host) with the **`query-rds-performance-insights`** skill to find the driver. (The plain `describe-alarms` in Step 2 also works for the RDS alarm — it carries the `DBClusterIdentifier`+`Role` dimensions and the `p75`/90/8-of-8 config.)
+
+## Custom-namespace counter alarms ("Redis Errors Detected")
+
+For a [[../../../wiki/oncall/redis-errors-detected|Redis Error Detected]] page the alarm is **not** an `AWS/*` metric — it is a per-namespace **counter**: namespace = the service namespace itself (e.g. `ranking_service`), MetricName `prod-<svc>-redis-errors.sum`, statistic **`Sum`**, **no dimensions**, threshold `> 100` / 2-of-2 / 300s, `TreatMissingData=notBreaching` (so the metric has *no datapoints* at near-zero baseline — an empty curve outside a burst is expected). Pull the counter curve in one **bundled, unattended** call:
+```bash
+"$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/pull_metric_sum.py" --namespace ranking_service --metric-name prod-ranking-service-redis-errors.sum --region eu-central-1 --start <ISO8601Z> --end <ISO8601Z>
+```
+It prints **one row per 300s bucket** (so a single-bucket burst decaying to a 1–3/5min trickle is visible) plus the aggregate breach report. `--stat` defaults to `Sum`, `--threshold` to 100, `--period` to 300; pass `--dimension Name=X,Value=Y` (repeatable) for a dimensioned counter, or omit it for the dimensionless Redis-errors metric. CloudWatch is **UTC**. This script is **generic** — any custom-namespace counter/gauge works, not just Redis errors. Then pull the alarm **state history** (above) for chronic-vs-rare. **Note:** the metric counter and the "Got error executing" log line are *independent sinks* — the runbook's Logs Insights query can return zero on a real spike; the curve here is the evidence, see [[../../../wiki/oncall/redis-errors-detected|Redis Error Detected]].
+
 ## Notes
 
 - **Reachability is only knowable by trying.** Env inspection (AWS CLI present, `AWS_PROFILE`/region set) cannot tell you whether the role holds `cloudwatch:DescribeAlarms`/`GetMetricData`. Make the read and report plainly if it is denied, rather than guessing.
 - **One alarm = one EC2 instance.** The metric dimension is the `InstanceId`, not the hostname; the alarm definition is where you get it.
+- **Region fallback for bundled scripts.** `pull_alarm_history.py` and `pull_queue_depth.py` resolve the AWS region in this order: `--region` arg → `AWS_DEFAULT_REGION` env var → `EF_DEFAULT_REGION` env var → `us-west-2`. Always pass `--region` explicitly for non-default regions. AWS-specific services (CloudWatch, EC2, SQS) are not available for Azure-format regions such as `westus2`.

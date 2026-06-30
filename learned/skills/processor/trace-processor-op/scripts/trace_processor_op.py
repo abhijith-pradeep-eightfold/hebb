@@ -52,12 +52,17 @@ def main(argv=None):
     ap.add_argument("--max-depth", type=int, default=50,
                     help="safety cap on chain length (default 50)")
     ap.add_argument("--format", choices=("human", "json"), default="human")
+    ap.add_argument("--region", default=None,
+                    help="Region for warehouse routing. Overrides EF_DEFAULT_REGION "
+                         "for this invocation (e.g. us-west-2, eu-central-1, "
+                         "ca-central-1, ap-southeast-2, westus2). When unset, "
+                         "EF_DEFAULT_REGION from the environment is used.")
     args = ap.parse_args(argv)
 
     if not event_log.is_valid_smid(args.smid):
         ap.error(f"smid {args.smid!r} is not a valid processor_msg_id (UUID charset expected)")
 
-    result = event_log.walk_parent_chain(args.smid, max_depth=args.max_depth)
+    result = event_log.walk_parent_chain(args.smid, max_depth=args.max_depth, region=args.region)
     if args.format == "json":
         print(json.dumps(result, indent=2, default=str))
     else:

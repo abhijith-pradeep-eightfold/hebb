@@ -52,13 +52,19 @@ def _alarm_threshold(region, prefix):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Pull SQS queue-depth metric + flag breaches.")
     ap.add_argument("--queue", required=True, help="SQS QueueName dimension value")
-    ap.add_argument("--region", default=os.environ.get("AWS_DEFAULT_REGION", "us-west-2"))
+    ap.add_argument("--region", default=None,
+                    help="AWS region (default: AWS_DEFAULT_REGION env var, then "
+                         "EF_DEFAULT_REGION, then us-west-2). e.g. us-west-2, "
+                         "eu-central-1, ca-central-1, ap-southeast-2")
     ap.add_argument("--start", help="ISO8601 start (UTC). Default: 24h before end.")
     ap.add_argument("--end", help="ISO8601 end (UTC). Default: now.")
     ap.add_argument("--period", type=int, default=900, help="bucket seconds (default 900)")
     ap.add_argument("--alarm-prefix",
                     help="alarm name prefix (default '[<region>] Queue backed up-<queue>')")
     args = ap.parse_args(argv)
+    region = (region
+              or os.environ.get("EF_DEFAULT_REGION")
+              or "us-west-2")
 
     end = args.end or _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     if args.start:
@@ -67,10 +73,10 @@ def main(argv=None):
         end_dt = _dt.datetime.strptime(end, "%Y-%m-%dT%H:%M:%SZ")
         start = (end_dt - _dt.timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    prefix = args.alarm_prefix or f"[{args.region}] Queue backed up-{args.queue}"
-    threshold, dp = _alarm_threshold(args.region, prefix)
+    prefix = args.alarm_prefix or f"[{region}] Queue backed up-{args.queue}"
+    threshold, dp = _alarm_threshold(region, prefix)
 
-    stats = _aws(["cloudwatch", "get-metric-statistics", "--region", args.region,
+    stats = _aws(["cloudwatch", "get-metric-statistics", "--region", region,
                   "--namespace", "AWS/SQS", "--metric-name", "ApproximateNumberOfMessagesVisible",
                   "--dimensions", f"Name=QueueName,Value={args.queue}",
                   "--start-time", start, "--end-time", end,
@@ -79,7 +85,7 @@ def main(argv=None):
                   "--output", "json"])
     rows = stats or []
 
-    print(f"queue={args.queue}  region={args.region}  period={args.period}s")
+    print(f"queue={args.queue}  region={region}  period={args.period}s")
     print(f"window={start} -> {end} (UTC)")
     print(f"alarm threshold={threshold}  datapoints_to_alarm={dp}\n")
     if not rows:

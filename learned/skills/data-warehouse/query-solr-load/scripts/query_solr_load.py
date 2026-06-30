@@ -74,13 +74,20 @@ def main(argv=None):
     ap.add_argument("--cache-ttl-secs", type=int, default=None,
                     help="get_list cache TTL in seconds; default None = fresh/live read")
     ap.add_argument("--format", choices=("table", "json"), default="table")
+    ap.add_argument("--region", default=None,
+                    help="Region for warehouse routing. Overrides EF_DEFAULT_REGION "
+                         "for this invocation (e.g. us-west-2, eu-central-1, "
+                         "ca-central-1, ap-southeast-2, westus2). When unset, "
+                         "EF_DEFAULT_REGION from the environment is used. StarRocks "
+                         "is region-gated; the run reports the gate plainly if unsupported.")
     args = ap.parse_args(argv)
 
     try:
         if args.mode == "split":
             result = query_log.split_timeseries(
                 args.core, args.shard_id, args.since, args.until,
-                bucket_minutes=args.bucket_minutes, cache_ttl_secs=args.cache_ttl_secs)
+                bucket_minutes=args.bucket_minutes, cache_ttl_secs=args.cache_ttl_secs,
+                region=args.region)
             cols = ["bucket", "indexing", "query"]
             header_keys = ["table", "core", "shard_id", "bucket_minutes"]
         else:
@@ -92,7 +99,7 @@ def main(argv=None):
             result = query_log.driver_breakdown(
                 args.core, args.shard_id, args.since, args.until,
                 args.baseline_since, args.baseline_until, dims=dims, stream=args.stream,
-                limit=args.limit, cache_ttl_secs=args.cache_ttl_secs)
+                limit=args.limit, cache_ttl_secs=args.cache_ttl_secs, region=args.region)
             cols = dims + ["spike_cnt", "base_cnt", "spike_per_min", "base_per_min", "ratio"]
             header_keys = ["table", "core", "shard_id", "stream"]
     except query_log.SearchQueryLogError as exc:

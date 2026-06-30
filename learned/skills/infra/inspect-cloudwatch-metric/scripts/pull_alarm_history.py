@@ -80,22 +80,29 @@ def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Summarize a CloudWatch alarm's trigger history (how chronic it is).")
     ap.add_argument("--alarm-name", required=True, help="exact alarm name (from the page or describe-alarms)")
-    ap.add_argument("--region", default=os.environ.get("AWS_DEFAULT_REGION", "us-west-2"))
+    ap.add_argument("--region", default=None,
+                    help="AWS region (default: AWS_DEFAULT_REGION env var, then "
+                         "EF_DEFAULT_REGION, then us-west-2). e.g. us-west-2, "
+                         "eu-central-1, ca-central-1, ap-southeast-2")
     ap.add_argument("--days-back", type=int, default=14,
                     help="lookback window in days (default 14; CloudWatch retains ~14d max)")
     ap.add_argument("--max-items", type=int, default=200, help="max history items to fetch")
     args = ap.parse_args(argv)
+    region = (args.region
+              or os.environ.get("AWS_DEFAULT_REGION")
+              or os.environ.get("EF_DEFAULT_REGION")
+              or "us-west-2")
 
     end = _dt.datetime.utcnow()
     start = end - _dt.timedelta(days=args.days_back)
-    data = _aws(["cloudwatch", "describe-alarm-history", "--region", args.region,
+    data = _aws(["cloudwatch", "describe-alarm-history", "--region", region,
                  "--alarm-name", args.alarm_name, "--history-item-type", "StateUpdate",
                  "--start-date", start.strftime("%Y-%m-%dT%H:%M:%SZ"),
                  "--end-date", end.strftime("%Y-%m-%dT%H:%M:%SZ"),
                  "--max-items", str(args.max_items), "--output", "json"])
 
     print(f"alarm={args.alarm_name}")
-    print(f"region={args.region}  lookback={args.days_back}d "
+    print(f"region={region}  lookback={args.days_back}d "
           f"(CloudWatch retains ~14d — older triggers not shown)\n")
     if data is None:
         print("(could not read alarm history — check alarm name / region / permissions)")

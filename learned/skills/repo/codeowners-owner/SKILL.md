@@ -15,6 +15,9 @@ knowledge_optional:
   - "[[../../../wiki/processor/op-registry|op_registry: operation name → source file]]"
   - "[[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]"
   - "[[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]"
+  - "[[../../../wiki/oncall/alarm-provisioning-failures|Alarm Provisioning Failures (oncall)]]"
+  - "[[../../../wiki/oncall/rds-cpu-high|RDS CPU too high (oncall)]]"
+  - "[[../../../wiki/ats/ats-entity-cache|ats_entity_cache write path]]"
 ---
 
 # Resolve the owner of a file or processor op

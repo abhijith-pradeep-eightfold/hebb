@@ -31,6 +31,7 @@ Run it (the gate-passing shape — never hardcode the interpreter):
 """
 import argparse
 import json
+import os
 import re
 import sys
 
@@ -125,7 +126,16 @@ def main(argv=None):
     p.add_argument("--json-out", metavar="PATH",
                    help="also write the full result as JSON to PATH "
                         "(handy for feeding a downstream plot step)")
+    p.add_argument("--region", default=None,
+                   help="Region for warehouse routing. Overrides EF_DEFAULT_REGION "
+                        "for this invocation (e.g. us-west-2, eu-central-1, "
+                        "ca-central-1, ap-southeast-2, westus2). When unset, "
+                        "EF_DEFAULT_REGION from the environment is used. StarRocks "
+                        "is region-gated; runner exits 3 if the region is unsupported.")
     args = p.parse_args(argv)
+
+    if args.region:
+        os.environ["EF_DEFAULT_REGION"] = args.region
 
     if args.sql is not None:
         sql = args.sql

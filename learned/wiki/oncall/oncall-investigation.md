@@ -16,6 +16,9 @@ Anchor on the real metric first, then correlate — the general method is [[../p
 
 - **Queue backed up** (SQS queue-depth alarm) → [[queue-backed-up|Queue backed up]].
 - **Solr CPU too high** (EC2 host-CPU alarm on a Solr replica) → [[solr-cpu-high|Solr CPU too high]].
+- **Alarm Provisioning Failures** (daily-DAG alarm-provisioning failure on the custom `airflow` metric; N datapoints = N independent failing alarm keys) → [[alarm-provisioning-failures|Alarm Provisioning Failures]].
+- **RDS CPU too high** (`AWS/RDS CPUUtilization` p75 alarm on a cluster `DBClusterIdentifier`+`Role`, often in GovCloud) → [[rds-cpu-high|RDS CPU too high]].
+- **Redis Error Detected** (a per-namespace `redis-errors` `Sum > 100` counter alarm; the error **counter** and the runbook's **log line** are independent sinks, so the prescribed Logs Insights query can return zero on a real spike) → [[redis-errors-detected|Redis Error Detected]].
 
 New ticket types are added here as their incidents are compiled — each as its own page with the alarm, the flow, and the automating skills/scripts.
 
@@ -32,18 +35,22 @@ Deliver an oncall finding as a **detailed, table-structured report** — not a p
 
 ### Posting the report to Slack
 
-When asked to post the report to Slack, treat it as an **outward-facing** action and follow two rules:
+When asked to post the report to Slack, treat it as an **outward-facing** action and follow three rules:
 
-- **Confirm the destination/surface before posting.** The post names people and customers; the channel/surface (Canvas in the page thread, a Markdown reply, a new channel message) is usually unspecified — confirm it first rather than guessing.
+- **Draft both forms, then ask which to post.** Always prepare **both** a concise threaded reply **and** the full table-structured report (a Canvas), and ask the user which to post — **both** (Canvas + linking reply) or **reply-only**. **Lean reply-only for a small RCA** (a few-line transient blip): a full Canvas there is noise. Don't default to a Canvas.
+- **Confirm the destination/surface before posting.** The post names people and customers; the channel/surface is usually unspecified — confirm it (together with the both-vs-reply-only choice) before guessing.
 - **Render people/teams/customers as plain text, never @-mentions** — so the post does not page anyone.
 
-The `oncall-post-report` skill encodes both rules; **use it** to create a Canvas with the full report and a concise threaded reply in the PagerDuty alert thread.
+The `oncall-post-report` skill encodes all three rules; **use it** to draft the reply + report, ask which to post, and post into the PagerDuty alert thread.
 
 ## Related skills
 
 - `oncall-queue-backed-up` — the high-level runbook skill for the *Queue backed up* ticket type (each ticket type has one such per-type runbook skill).
 - `oncall-solr-cpu-high` — the high-level runbook skill for the *Solr CPU too high* ticket type (characterize the CPU spike → split indexing vs query → break down the drivers → trace any processor source → route).
-- `oncall-post-report` — use it to post the finished table-structured report back to the PagerDuty Slack thread (Canvas + concise threaded reply), with a confirm-before-post gate and plain-text (non-paging) references. Applies to every ticket type.
+- `oncall-alarm-provisioning-failures` — the high-level runbook skill for the *Alarm Provisioning Failures* ticket type (characterize the failing-key count → enumerate the key via the `[Action Needed] Alarm` email → confirm the missing-config root cause with a plain config read → route to the owner).
+- `oncall-rds-cpu-high` — the high-level runbook skill for the *RDS CPU too high* ticket type (pull the WRITER/READER CPU curves → split the DB load in Performance Insights → spot-check the actual SQL/query tags → trace to the producing op/code path → route).
+- `oncall-redis-errors-detected` — the high-level runbook skill for the *Redis Error Detected* ticket type (pull the PD thread + per-namespace runbook → characterize the `redis-errors` metric + alarm history → run the runbook's Logs Insights query *expecting it may be empty* → route to Core Infra).
+- `oncall-post-report` — use it to post the finished report back to the PagerDuty Slack thread; it drafts **both** a concise reply and the full report and asks which to post (lean reply-only for a small RCA), with a confirm-before-post gate and plain-text (non-paging) references. Applies to every ticket type.
 
 ## Related
 

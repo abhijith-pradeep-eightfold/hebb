@@ -25,7 +25,7 @@ Time-bucketed and per-source aggregates of [[../../../wiki/data-warehouse/search
      ```bash
      PYTHONPATH="$CODE_BASE/www" "$VSCODE_PYTHON" "${CLAUDE_SKILL_DIR}/scripts/query_solr_load.py" --mode drivers --core profiles --shard-id 21 --since "2026-06-29 11:00:00" --until "2026-06-29 11:45:00" --baseline-since "2026-06-29 10:00:00" --baseline-until "2026-06-29 11:00:00"
      ```
-   `--format json` emits machine-readable rows (the `split` timeseries feeds the `plot-result-set` skill directly).
+   `--format json` emits machine-readable rows (the `split` timeseries feeds the `plot-result-set` skill directly). **`--region <region>`** — sets `EF_DEFAULT_REGION` for this invocation; valid regions (StarRocks-gated): `us-west-2`, `eu-central-1`, `ca-central-1`, `ap-southeast-2`, `westus2`. When unset, `EF_DEFAULT_REGION` from the environment is used.
 
 3. **Read the output.** `split`: the bucket where one stream's count jumps and stays elevated locates the onset; compare its rise to the CPU curve's. `drivers`: the top `spike_per_min` rows with a high `ratio` (or `NEW`) are the sources that drove the surge; **scope the windows to the confirmed breach window** (from the CPU step) so a burst separates from heavy baseline traffic. When the surging `env` is **`processor`**, the queries were issued by processor ops — take a culprit row's `sequence_message_id` (the processor SMID) and walk it to the root op with `trace-processor-op`, then route with `codeowners-owner`.
 

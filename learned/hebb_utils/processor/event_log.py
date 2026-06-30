@@ -7,16 +7,9 @@ parent edge is ``processor_parent_msg_id``; a row's op is ``operation0`` (full l
 in ``operations_list``). See learned/wiki/processor/processor-event-log and
 learned/wiki/processor/tracing-processor-op-lineage.
 
-This is **vscode-dependent**: it imports ``db`` and ``cloud_interfaces`` (www-rooted),
-so a caller must run with ``PYTHONPATH=$CODE_BASE/www`` (see
-learned/wiki/vscode-repo/python-import-root). It lives in ``hebb_utils`` (not
-``utils``) so it can be imported in the same process as vscode's own top-level
-``utils`` package without a name collision.
-
-The table is modelled by ``ProcessorLogEvent`` with a *logical* db_type
-(``REDSHIFT_LOG``) that ``get_db_type_override`` resolves to the region's physical
-warehouse (e.g. StarRocks ``log.processor_event_log``) — the adapter-factory read
-path via ``dwh.get_list``, not ``starrocks_utils``.
+Reads go through ``hebb_utils.starrocks.direct_query`` (AWS CLI credentials + pymysql),
+which works for all four AWS StarRocks regions without a vscode import or STS dependency.
+Region defaults to ``EF_DEFAULT_REGION`` env var (fallback ``us-west-2``) when not passed.
 """
 import re
 
@@ -32,6 +25,9 @@ DEFAULT_COLS = (
     "DATE_TRUNC('second', t_create) AS t_create"
 )
 
+_DB_TYPE = "starrocks"
+_TABLE = "log.processor_event_log"
+
 
 class ProcessorEventLogError(Exception):
     """A read could not be performed; the message is user-facing.
@@ -46,50 +42,47 @@ def is_valid_smid(smid):
     return bool(smid and _SMID_RE.match(smid))
 
 
-def _imports():
-    """Lazily import the vscode packages; raise a PYTHONPATH-aware error if they fail."""
+def resolve_db_type_and_table(region=None):
+    """Return the db_type and full table name for processor_event_log.
+
+    StarRocks is the physical backend for all supported AWS regions. Returns
+    ``(_DB_TYPE, _TABLE)`` as constants; region validation happens at query time
+    in ``direct_query.run_select``.
+    """
+    return _DB_TYPE, _TABLE
+
+
+def run_select(query, region=None):
+    """Execute a read-only SELECT against StarRocks; returns ``list[dict]``.
+
+    Routes through ``hebb_utils.starrocks.direct_query`` (AWS CLI + pymysql).
+    ``region`` defaults to ``EF_DEFAULT_REGION`` env var (fallback ``us-west-2``).
+    """
     try:
-        from db.base_log_event import ProcessorLogEvent
-        from db.db_type import DBType
-        from cloud_interfaces import datawarehouse as dwh
+        from hebb_utils.starrocks.direct_query import run_select as _direct, DirectQueryError
     except ImportError as exc:
         raise ProcessorEventLogError(
-            f"import failed — is PYTHONPATH set to $CODE_BASE/www?\n  {exc}") from exc
-    return ProcessorLogEvent, DBType, dwh
+            f"could not import direct_query — is hebb_utils on sys.path?\n  {exc}"
+        ) from exc
+    try:
+        return list(_direct(query, region=region) or [])
+    except DirectQueryError as exc:
+        raise ProcessorEventLogError(str(exc)) from exc
 
 
-def resolve_db_type_and_table():
-    """Resolve the logical ``REDSHIFT_LOG`` db_type to the region's warehouse + table.
-
-    Returns ``(db_type, full_table_name)`` — e.g. ``('starrocks', 'log.processor_event_log')``.
-    Nothing is hardcoded per region; the model performs the routing.
-    """
-    ProcessorLogEvent, DBType, dwh = _imports()
-    db_type = dwh.get_db_type_override(DBType.REDSHIFT_LOG.value)
-    table = ProcessorLogEvent.get_full_table_name(db_type=db_type)
-    return db_type, table
-
-
-def run_select(query, db_type):
-    """Execute a read-only SELECT via the adapter-factory path; returns ``list[dict]``."""
-    _, _, dwh = _imports()
-    return dwh.get_list(query, db_type=db_type) or []
-
-
-def fetch_rows_by_msg_id(smid, db_type=None, table=None, cols=DEFAULT_COLS):
+def fetch_rows_by_msg_id(smid, db_type=None, table=None, cols=DEFAULT_COLS, region=None):
     """All rows for one ``processor_msg_id`` (SMID), ordered by event time.
 
-    One message emits several rows (one per ``event_type``). Resolves the
-    warehouse/table itself unless ``db_type``/``table`` are supplied (pass them when
-    looping to avoid re-resolving each hop).
+    One message emits several rows (one per ``event_type``). ``db_type``/``table``
+    are accepted for API compatibility but ignored — routing goes through
+    ``direct_query``. ``region`` sets the StarRocks region for this call.
     """
     if not is_valid_smid(smid):
         raise ProcessorEventLogError(
             f"invalid processor_msg_id (SMID): {smid!r} (expected UUID charset)")
-    if db_type is None or table is None:
-        db_type, table = resolve_db_type_and_table()
-    q = f"SELECT {cols} FROM {table} WHERE processor_msg_id = '{smid}' ORDER BY t_create"
-    return run_select(q, db_type)
+    t = table or _TABLE
+    q = f"SELECT {cols} FROM {t} WHERE processor_msg_id = '{smid}' ORDER BY t_create"
+    return run_select(q, region=region)
 
 
 # Timestamp literal (YYYY-MM-DD, optionally with HH:MM[:SS]) — safe to interpolate as a
@@ -137,29 +130,30 @@ def _where_clauses(processor_msg_id=None, processor_parent_msg_id=None, group_id
 
 def fetch_rows(processor_msg_id=None, processor_parent_msg_id=None, group_id=None,
                operation0=None, queue_name=None, event_type=None,
-               since=None, until=None, since_hours=None, limit=200, cols=DEFAULT_COLS):
+               since=None, until=None, since_hours=None, limit=200, cols=DEFAULT_COLS,
+               region=None):
     """Filtered read of processor_event_log. Filters are optional and AND-combined.
 
     Every interpolated value is charset-validated. At least one filter is required so
     the scan stays bounded. ``queue_name`` matches the trimmed column; ``since``/``until``
-    are absolute ``t_create`` bounds ('YYYY-MM-DD[ HH:MM[:SS]]'). Returns
+    are absolute ``t_create`` bounds ('YYYY-MM-DD[ HH:MM[:SS]]'). ``region`` sets
+    the StarRocks region for this call (e.g. ``'eu-central-1'``). Returns
     ``{"db_type", "table", "rows": list[dict]}`` (rows newest-first, capped by ``limit``).
     """
-    db_type, table = resolve_db_type_and_table()
     where = _where_clauses(processor_msg_id, processor_parent_msg_id, group_id,
                            operation0, queue_name, event_type, since, until, since_hours)
     if not where:
         raise ProcessorEventLogError(
             "at least one filter is required (processor_msg_id, processor_parent_msg_id, "
             "group_id, operation0, queue_name, event_type, since/until, or since_hours)")
-    q = (f"SELECT {cols} FROM {table} WHERE {' AND '.join(where)} "
+    q = (f"SELECT {cols} FROM {_TABLE} WHERE {' AND '.join(where)} "
          f"ORDER BY t_create DESC LIMIT {int(limit)}")
-    return {"db_type": db_type, "table": table, "rows": run_select(q, db_type)}
+    return {"db_type": _DB_TYPE, "table": _TABLE, "rows": run_select(q, region=region)}
 
 
 def count_events(group_by, processor_parent_msg_id=None, group_id=None, operation0=None,
                  queue_name=None, event_type=None, since=None, until=None,
-                 since_hours=None, limit=200):
+                 since_hours=None, limit=200, region=None):
     """COUNT(*) breakdown of processor_event_log rows grouped by ``group_by`` columns.
 
     ``group_by`` is a list from a fixed allowlist (operation0, group_id, queue_name,
@@ -174,16 +168,15 @@ def count_events(group_by, processor_parent_msg_id=None, group_id=None, operatio
     if bad:
         raise ProcessorEventLogError(
             f"invalid group_by column(s): {bad!r} (allowed: {', '.join(_GROUP_COLS)})")
-    db_type, table = resolve_db_type_and_table()
     where = _where_clauses(None, processor_parent_msg_id, group_id, operation0,
                            queue_name, event_type, since, until, since_hours)
     if not where:
         raise ProcessorEventLogError("at least one filter is required for an aggregate read")
     cols = ", ".join(group_by)
-    q = (f"SELECT {cols}, COUNT(*) AS cnt FROM {table} WHERE {' AND '.join(where)} "
+    q = (f"SELECT {cols}, COUNT(*) AS cnt FROM {_TABLE} WHERE {' AND '.join(where)} "
          f"GROUP BY {cols} ORDER BY cnt DESC LIMIT {int(limit)}")
-    return {"db_type": db_type, "table": table, "group_by": list(group_by),
-            "rows": run_select(q, db_type)}
+    return {"db_type": _DB_TYPE, "table": _TABLE, "group_by": list(group_by),
+            "rows": run_select(q, region=region)}
 
 
 # Dims allowed in a latency breakdown's GROUP BY (besides an optional time bucket).
@@ -203,7 +196,7 @@ def _require_queue(queue_name):
         raise ProcessorEventLogError(f"invalid queue_name: {queue_name!r}")
 
 
-def throughput_timeseries(queue_name, since, until, bucket_minutes=15):
+def throughput_timeseries(queue_name, since, until, bucket_minutes=15, region=None):
     """Per-bucket inflow (``message_dispatched``) vs drain (``message_processed``) for a queue.
 
     The **stock/flow** diagnostic for a backed-up queue: depth is the running sum of
@@ -218,25 +211,24 @@ def throughput_timeseries(queue_name, since, until, bucket_minutes=15):
     bm = int(bucket_minutes)
     if bm <= 0:
         raise ProcessorEventLogError("bucket_minutes must be a positive integer")
-    db_type, table = resolve_db_type_and_table()
     q = (f"SELECT TIME_SLICE(t_create, INTERVAL {bm} MINUTE) AS bucket, "
          f"SUM(CASE WHEN event_type='message_dispatched' THEN 1 ELSE 0 END) AS dispatched_in, "
          f"SUM(CASE WHEN event_type='message_processed' THEN 1 ELSE 0 END) AS processed_out "
-         f"FROM {table} WHERE TRIM(queue_name) = '{queue_name}' "
+         f"FROM {_TABLE} WHERE TRIM(queue_name) = '{queue_name}' "
          f"AND t_create >= '{since}' AND t_create <= '{until}' "
          f"GROUP BY TIME_SLICE(t_create, INTERVAL {bm} MINUTE) ORDER BY 1")
-    rows = run_select(q, db_type)
+    rows = run_select(q, region=region)
     for r in rows:
         try:
             r["net_delta"] = int(r.get("dispatched_in") or 0) - int(r.get("processed_out") or 0)
         except (TypeError, ValueError):
             r["net_delta"] = None
-    return {"db_type": db_type, "table": table, "queue": queue_name,
+    return {"db_type": _DB_TYPE, "table": _TABLE, "queue": queue_name,
             "bucket_minutes": bm, "rows": rows}
 
 
 def latency_breakdown(queue_name, since, until, bucket_minutes=None, by=None,
-                      operation0=None, group_id=None, limit=200):
+                      operation0=None, group_id=None, limit=200, region=None):
     """Latency + worker-cost breakdown of ``message_processed`` rows for a queue.
 
     Groups by an optional time bucket (``bucket_minutes``) and/or the dims in ``by``
@@ -276,19 +268,18 @@ def latency_breakdown(queue_name, since, until, bucket_minutes=None, by=None,
         raise ProcessorEventLogError(
             "latency_breakdown needs bucket_minutes and/or at least one by dim")
     order = "1" if bucket_minutes is not None else "total_proc_sec DESC"
-    db_type, table = resolve_db_type_and_table()
     q = (f"SELECT {', '.join(select_exprs)}, COUNT(*) AS processed_out, "
          f"ROUND(percentile_approx(latency_milliseconds, 0.5)) AS p50_ms, "
          f"ROUND(percentile_approx(latency_milliseconds, 0.9)) AS p90_ms, "
          f"ROUND(SUM(latency_milliseconds)/1000.0) AS total_proc_sec "
-         f"FROM {table} WHERE {' AND '.join(where)} "
+         f"FROM {_TABLE} WHERE {' AND '.join(where)} "
          f"GROUP BY {', '.join(group_exprs)} ORDER BY {order} LIMIT {int(limit)}")
-    return {"db_type": db_type, "table": table, "queue": queue_name, "by": by,
-            "bucket_minutes": bucket_minutes, "rows": run_select(q, db_type)}
+    return {"db_type": _DB_TYPE, "table": _TABLE, "queue": queue_name, "by": by,
+            "bucket_minutes": bucket_minutes, "rows": run_select(q, region=region)}
 
 
 def parent_attribution(queue_name, since, until, parent_since=None, parent_until=None,
-                       limit=50):
+                       limit=50, region=None):
     """Rank the **parent ops** that produced a queue's messages (the driver breakdown).
 
     The CORRECT parent metric: ``COUNT(DISTINCT processor_msg_id)`` over the parent
@@ -306,19 +297,18 @@ def parent_attribution(queue_name, since, until, parent_since=None, parent_until
     parent_until = parent_until or until
     _require_window(since=since, until=until,
                     parent_since=parent_since, parent_until=parent_until)
-    db_type, table = resolve_db_type_and_table()
     q = (f"SELECT operation0, COUNT(DISTINCT processor_msg_id) AS distinct_msgs "
-         f"FROM {table} "
+         f"FROM {_TABLE} "
          f"WHERE t_create >= '{parent_since}' AND t_create <= '{parent_until}' "
          f"AND processor_msg_id IN ("
-         f"SELECT DISTINCT processor_parent_msg_id FROM {table} "
+         f"SELECT DISTINCT processor_parent_msg_id FROM {_TABLE} "
          f"WHERE event_type = 'message_dispatched' AND TRIM(queue_name) = '{queue_name}' "
          f"AND t_create >= '{since}' AND t_create <= '{until}' "
          f"AND processor_parent_msg_id IS NOT NULL) "
          f"GROUP BY operation0 ORDER BY distinct_msgs DESC LIMIT {int(limit)}")
-    return {"db_type": db_type, "table": table, "queue": queue_name,
+    return {"db_type": _DB_TYPE, "table": _TABLE, "queue": queue_name,
             "child_window": [since, until], "parent_window": [parent_since, parent_until],
-            "rows": run_select(q, db_type)}
+            "rows": run_select(q, region=region)}
 
 
 def hop_from_rows(smid, depth, rows):
@@ -341,7 +331,7 @@ def hop_from_rows(smid, depth, rows):
     }
 
 
-def walk_parent_chain(target, max_depth=50):
+def walk_parent_chain(target, max_depth=50, region=None):
     """Walk ``processor_parent_msg_id`` from ``target`` up to the parentless root.
 
     Returns ``{"db_type", "table", "chain": [hop, ...]}`` with ``chain[0]`` = target
@@ -351,16 +341,23 @@ def walk_parent_chain(target, max_depth=50):
     if not is_valid_smid(target):
         raise ProcessorEventLogError(
             f"invalid processor_msg_id (SMID): {target!r} (expected UUID charset)")
-    db_type, table = resolve_db_type_and_table()
     chain, visited, smid, depth = [], set(), target, 0
     while smid and smid not in visited and depth < max_depth:
         visited.add(smid)
-        rows = fetch_rows_by_msg_id(smid, db_type=db_type, table=table)
+        rows = fetch_rows_by_msg_id(smid, region=region)
         if not rows:
             chain.append({"depth": depth, "processor_msg_id": smid, "_note": "NO ROW FOUND"})
             break
         hop = hop_from_rows(smid, depth, rows)
         chain.append(hop)
         smid = hop["parent"]
+        # A parent that is not SMID-shaped (e.g. an `import` op's {group_id}-hex dispatch
+        # id, like 'jp-ey.com-f68b…') has no row to fetch — fetch_rows_by_msg_id would
+        # raise on it and abort the whole trace. Stop here instead: this hop is the
+        # deepest knowable op; annotate why the walk ended and keep it as the root.
+        if smid and not is_valid_smid(smid):
+            hop["_note"] = ("parent %r is a non-UUID dispatch id ({group_id}-hex form); "
+                            "cannot walk further" % smid)
+            break
         depth += 1
-    return {"db_type": db_type, "table": table, "chain": chain}
+    return {"db_type": _DB_TYPE, "table": _TABLE, "chain": chain}

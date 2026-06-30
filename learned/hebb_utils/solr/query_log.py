@@ -17,13 +17,9 @@ Key column facts (see the wiki page): `t_create` is the per-query event time, st
 marks the indexing (write) stream; `group_id` is the tenant; `env` is the originating
 service (e.g. github-ci, processor).
 
-This is **vscode-dependent**: it imports `datawarehouse.starrocks.starrocks_utils` and
-`db.db_type` (www-rooted), so a caller must run with `PYTHONPATH=$CODE_BASE/www` (see
-learned/wiki/vscode-repo/python-import-root). It lives in `hebb_utils` (not `utils`) so
-it can be imported in the same process as vscode's own top-level `utils` package without
-a name collision. Reads go through `starrocks_utils.get_list` (the read-only
-`STARROCKS-CLUSTER-RO` path), so the table is read from StarRocks specifically — the
-same access pattern (and region gate) as the `query-starrocks` skill.
+Reads go through `hebb_utils.starrocks.direct_query` (AWS CLI credentials + pymysql),
+which works for all four AWS StarRocks regions without a vscode import or STS dependency.
+Region defaults to ``EF_DEFAULT_REGION`` env var (fallback ``us-west-2``) when not passed.
 """
 import datetime
 import re
@@ -50,33 +46,22 @@ class SearchQueryLogError(Exception):
     """
 
 
-def _imports():
-    """Lazily import the vscode packages; raise a PYTHONPATH-aware error if they fail."""
-    try:
-        from datawarehouse.starrocks import starrocks_utils
-        from db.db_type import DBType
-    except ImportError as exc:
-        raise SearchQueryLogError(
-            f"import failed — is PYTHONPATH set to $CODE_BASE/www?\n  {exc}") from exc
-    return starrocks_utils, DBType
-
-
-def run_select(query, cache_ttl_secs=None):
+def run_select(query, cache_ttl_secs=None, region=None):
     """Execute a read-only SELECT against StarRocks; returns ``list[dict]``.
 
-    Routes through ``starrocks_utils.get_list`` on the read-only cluster. In a region
-    where StarRocks is not supported, ``get_list`` asserts on the db_type allowlist; we
-    translate that into a clear ``SearchQueryLogError`` rather than a bare AssertionError.
+    Routes through ``hebb_utils.starrocks.direct_query`` (AWS CLI + pymysql).
+    ``region`` defaults to ``EF_DEFAULT_REGION`` env var (fallback ``us-west-2``).
     """
-    starrocks_utils, DBType = _imports()
     try:
-        rows = starrocks_utils.get_list(
-            query, db_type=DBType.STARROCKS.value, cache_ttl_secs=cache_ttl_secs)
-    except AssertionError as exc:
+        from hebb_utils.starrocks.direct_query import run_select as _direct, DirectQueryError
+    except ImportError as exc:
         raise SearchQueryLogError(
-            "StarRocks is not supported in the resolved region (region gate). "
-            "Report this exactly rather than guessing.") from exc
-    return list(rows or [])
+            f"could not import direct_query — is hebb_utils on sys.path?\n  {exc}"
+        ) from exc
+    try:
+        return _direct(query, region=region, cache_ttl_secs=cache_ttl_secs)
+    except DirectQueryError as exc:
+        raise SearchQueryLogError(str(exc)) from exc
 
 
 def _validate_ident(label, val):
@@ -119,7 +104,7 @@ def _window_minutes(since, until):
     return delta if delta > 0 else 1.0
 
 
-def split_timeseries(core, shard_id, since, until, bucket_minutes=15, cache_ttl_secs=None):
+def split_timeseries(core, shard_id, since, until, bucket_minutes=15, cache_ttl_secs=None, region=None):
     """Per-bucket indexing-vs-query counts for one Solr core+shard over a window.
 
     Indexing = rows with ``callerid='index'`` (the write stream); query = every other
@@ -141,11 +126,12 @@ def split_timeseries(core, shard_id, since, until, bucket_minutes=15, cache_ttl_
          f"AND t_create >= '{since}' AND t_create <= '{until}' "
          f"GROUP BY TIME_SLICE(t_create, INTERVAL {bm} MINUTE) ORDER BY 1")
     return {"table": TABLE, "core": core, "shard_id": int(shard_id),
-            "bucket_minutes": bm, "rows": run_select(q, cache_ttl_secs)}
+            "bucket_minutes": bm, "rows": run_select(q, cache_ttl_secs, region=region)}
 
 
 def driver_breakdown(core, shard_id, since, until, baseline_since, baseline_until,
-                     dims=_DRIVER_DIMS, stream="query", limit=50, cache_ttl_secs=None):
+                     dims=_DRIVER_DIMS, stream="query", limit=50, cache_ttl_secs=None,
+                     region=None):
     """Per-source breakdown of a Solr core+shard's load: spike window vs baseline.
 
     Groups by ``dims`` (a subset of callerid, group_id, env) and counts rows in the
@@ -193,15 +179,54 @@ def driver_breakdown(core, shard_id, since, until, baseline_since, baseline_unti
          f"FROM {TABLE} WHERE {scope}{stream_clause} "
          f"AND t_create >= '{overall_lo}' AND t_create <= '{overall_hi}' "
          f"GROUP BY {cols} HAVING spike_cnt > 0 ORDER BY spike_cnt DESC LIMIT {int(limit)}")
-    rows = run_select(q, cache_ttl_secs)
+    rows = run_select(q, cache_ttl_secs, region=region)
     spike_min = _window_minutes(since, until)
     base_min = _window_minutes(baseline_since, baseline_until)
     for r in rows:
         sc = float(r.get("spike_cnt") or 0)
         bc = float(r.get("base_cnt") or 0)
-        r["spike_per_min"] = round(sc / spike_min, 2)
-        r["base_per_min"] = round(bc / base_min, 2)
-        r["ratio"] = round(r["spike_per_min"] / r["base_per_min"], 2) if bc > 0 else None
+        # Divide the UNROUNDED rates and guard on the actual denominator. base_per_min is
+        # round(bc / base_min, 2), which collapses a small-but-nonzero baseline count to
+        # 0.0 over a long baseline window — so guarding on `bc > 0` (the raw count) and
+        # then dividing by base_per_min raised ZeroDivisionError. Here ratio=None still
+        # flags a NEW source (zero baseline); a tiny baseline yields a large finite ratio.
+        spm = sc / spike_min
+        bpm = bc / base_min
+        r["spike_per_min"] = round(spm, 2)
+        r["base_per_min"] = round(bpm, 2)
+        r["ratio"] = round(spm / bpm, 2) if bpm > 0 else None
     return {"table": TABLE, "core": core, "shard_id": int(shard_id), "dims": dims,
             "stream": stream, "spike_window": [since, until],
             "baseline_window": [baseline_since, baseline_until], "rows": rows}
+
+
+def processor_query_smids(core, shard_id, since, until, limit=500,
+                          cache_ttl_secs=None, region=None):
+    """Distinct processor SMIDs behind a Solr core+shard's *query* traffic.
+
+    For one ``core`` + ``shard_id`` over ``[since, until]``, return the
+    ``env='processor'`` query rows (``callerid <> 'index'`` — read traffic, not
+    indexing) grouped by ``sequence_message_id`` (the processor SMID that issued each
+    query — the join key to processor_event_log). Each row carries the query count that
+    SMID produced plus its ``group_id`` / ``callerid``, highest-volume SMIDs first.
+    Feed each ``sequence_message_id`` to
+    ``hebb_utils.processor.event_log.walk_parent_chain`` to reach its root op — this is
+    the env=processor -> sequence_message_id -> root-op bridge (see the wiki page
+    learned/wiki/data-warehouse/search-query-log, "sequence_message_id").
+
+    Returns ``{"table","core","shard_id","window":[since,until],
+    "rows":[{sequence_message_id, group_id, callerid, query_cnt}]}`` (read-only;
+    every interpolated value is charset/format-validated).
+    """
+    scope = _scope_clause(core, shard_id)
+    _validate_ts("since", since)
+    _validate_ts("until", until)
+    q = (f"SELECT sequence_message_id, group_id, callerid, COUNT(*) AS query_cnt "
+         f"FROM {TABLE} WHERE {scope} "
+         f"AND t_create >= '{since}' AND t_create <= '{until}' "
+         f"AND env = 'processor' AND callerid <> '{INDEX_CALLERID}' "
+         f"AND sequence_message_id IS NOT NULL AND sequence_message_id <> '' "
+         f"GROUP BY sequence_message_id, group_id, callerid "
+         f"ORDER BY query_cnt DESC LIMIT {int(limit)}")
+    return {"table": TABLE, "core": core, "shard_id": int(shard_id),
+            "window": [since, until], "rows": run_select(q, cache_ttl_secs, region=region)}

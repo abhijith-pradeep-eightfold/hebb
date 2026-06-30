@@ -27,9 +27,14 @@ The two env vars are `CODE_BASE` (repo root, `/home/ec2-user/vscode`) and `VSCOD
 
 The `$VSCODE_PYTHON` venv also carries common third-party libraries beyond the repo's own packages. Observed available: **`matplotlib` 3.10.0** (with `matplotlib.dates`) — usable for headless plotting via the Agg backend (`matplotlib.use("Agg")`) to render query results to a PNG without a display. See [[../data-warehouse/querying-starrocks#plotting-the-result-to-a-png|Querying StarRocks → plotting]].
 
+## Related skills
+
+- `config-get` — use it to read a config value (`config.get(name, field_name=...)`); it runs with this `$CODE_BASE/www` import root.
+
 ## Related
 
 - [[../data-warehouse/querying-starrocks|Querying StarRocks]] — a concrete script that imports `datawarehouse.starrocks` and `db.db_type` and therefore needs `$CODE_BASE/www`.
+- [[../infra/config-get|Reading a config value (`config.get`)]] — a config read that runs with this import root.
 
 ---
 *Sources:* observed at runtime in `inputs/2026-06-24-starrocks-query-count.md`; package layout under `www/` in the `vscode` repo. matplotlib-in-venv observed in `inputs/2026-06-24-solr-query-buckets.md`.

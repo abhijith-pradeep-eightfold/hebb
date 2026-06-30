@@ -48,6 +48,11 @@ def main(argv=None):
                          "queue_name, event_type, status, system_id")
     ap.add_argument("--limit", type=int, default=200, help="max rows (default 200)")
     ap.add_argument("--format", choices=("human", "json"), default="human")
+    ap.add_argument("--region", default=None,
+                    help="Region for warehouse routing. Overrides EF_DEFAULT_REGION "
+                         "for this invocation (e.g. us-west-2, eu-central-1, "
+                         "ca-central-1, ap-southeast-2, westus2). When unset, "
+                         "EF_DEFAULT_REGION from the environment is used.")
     args = ap.parse_args(argv)
 
     if args.count_by:
@@ -63,6 +68,7 @@ def main(argv=None):
             until=args.until,
             since_hours=args.since_hours,
             limit=args.limit,
+            region=args.region,
         )
         if args.format == "json":
             print(json.dumps(result, indent=2, default=str))
@@ -86,6 +92,7 @@ def main(argv=None):
         until=args.until,
         since_hours=args.since_hours,
         limit=args.limit,
+        region=args.region,
     )
     if args.format == "json":
         print(json.dumps(result, indent=2, default=str))
