@@ -19,6 +19,7 @@ Anchor on the real metric first, then correlate — the general method is [[../p
 - **Alarm Provisioning Failures** (daily-DAG alarm-provisioning failure on the custom `airflow` metric; N datapoints = N independent failing alarm keys) → [[alarm-provisioning-failures|Alarm Provisioning Failures]].
 - **RDS CPU too high** (`AWS/RDS CPUUtilization` p75 alarm on a cluster `DBClusterIdentifier`+`Role`, often in GovCloud) → [[rds-cpu-high|RDS CPU too high]].
 - **Redis Error Detected** (a per-namespace `redis-errors` `Sum > 100` counter alarm; the error **counter** and the runbook's **log line** are independent sinks, so the prescribed Logs Insights query can return zero on a real spike) → [[redis-errors-detected|Redis Error Detected]].
+- **Airflow DAG Failure** (a per-DAG `airflow-airflow.<dag>.failed.sum` `Sum >= 1` / 900s / 1-of-1 counter alarm; the counter is keyed on the wrapped script's **process exit code** so many exit-0 aborts never page, and on-demand DAGs make it intermittent — distinct from *Alarm Provisioning Failures*) → [[airflow-dag-failure|Airflow DAG Failure]].
 
 New ticket types are added here as their incidents are compiled — each as its own page with the alarm, the flow, and the automating skills/scripts.
 
@@ -50,6 +51,7 @@ The `oncall-post-report` skill encodes all three rules; **use it** to draft the 
 - `oncall-alarm-provisioning-failures` — the high-level runbook skill for the *Alarm Provisioning Failures* ticket type (characterize the failing-key count → enumerate the key via the `[Action Needed] Alarm` email → confirm the missing-config root cause with a plain config read → route to the owner).
 - `oncall-rds-cpu-high` — the high-level runbook skill for the *RDS CPU too high* ticket type (pull the WRITER/READER CPU curves → split the DB load in Performance Insights → spot-check the actual SQL/query tags → trace to the producing op/code path → route).
 - `oncall-redis-errors-detected` — the high-level runbook skill for the *Redis Error Detected* ticket type (pull the PD thread + per-namespace runbook → characterize the `redis-errors` metric + alarm history → run the runbook's Logs Insights query *expecting it may be empty* → route to Core Infra).
+- `oncall-airflow-dag-failure` — the high-level runbook skill for the *Airflow DAG Failure* ticket type (pull the PD thread + Confluence runbook → characterize the `airflow-airflow.<dag>.failed.sum` metric + state history → trace the failure→exit-code→counter path → confirm the deploy via `build_log` → route via CODEOWNERS).
 - `oncall-post-report` — use it to post the finished report back to the PagerDuty Slack thread; it drafts **both** a concise reply and the full report and asks which to post (lean reply-only for a small RCA), with a confirm-before-post gate and plain-text (non-paging) references. Applies to every ticket type.
 
 ## Related

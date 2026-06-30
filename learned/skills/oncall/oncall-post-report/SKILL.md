@@ -10,6 +10,7 @@ knowledge_optional:
   - "[[../../../wiki/oncall/alarm-provisioning-failures|Alarm Provisioning Failures (oncall)]]"
   - "[[../../../wiki/oncall/rds-cpu-high|RDS CPU too high (oncall)]]"
   - "[[../../../wiki/oncall/redis-errors-detected|Redis Error Detected (oncall)]]"
+  - "[[../../../wiki/oncall/airflow-dag-failure|Airflow DAG Failure (oncall)]]"
 ---
 
 # Post an oncall report to Slack

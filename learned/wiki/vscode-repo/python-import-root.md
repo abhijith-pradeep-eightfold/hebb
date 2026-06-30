@@ -30,6 +30,7 @@ The `$VSCODE_PYTHON` venv also carries common third-party libraries beyond the r
 ## Related skills
 
 - `config-get` — use it to read a config value (`config.get(name, field_name=...)`); it runs with this `$CODE_BASE/www` import root.
+- `query-build-log` — use it to read the `build_log` deployment-record table; its `BuildLog` model is `www`-rooted (`internal.build_log`), so it runs with this `$CODE_BASE/www` import root.
 
 ## Related
 

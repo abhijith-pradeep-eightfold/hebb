@@ -37,4 +37,5 @@ A CODEOWNERS team handle `@org/team` (e.g. `@EightfoldAI/dp-integrations`) is th
 
 - [[../processor/op-registry|op_registry]] — map an `operation0` to its source file first, then resolve that file's owner here.
 - [[../oncall/queue-backed-up|Queue backed up (oncall)]] — routes a traced root/culprit op to its owners via this page.
+- [[../oncall/airflow-dag-failure|Airflow DAG Failure (oncall)]] — routes the failing DAG/deploy source files (`deploy_azure_server.py` → core-infrastructure + app-infra; the DAG → app-infra; `app_service_utils.py` → no rule) via this page.
 - [[../vscode-repo/python-import-root|Python import root]] — repo layout (`$CODE_BASE/www`).

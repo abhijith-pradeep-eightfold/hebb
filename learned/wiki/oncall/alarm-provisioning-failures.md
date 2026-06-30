@@ -81,6 +81,7 @@ Report as a **detailed, table-structured report**, not prose — see the shared 
 ## Related
 
 - [[oncall-investigation|Oncall investigation — ticket types]] — the umbrella discipline and the ticket-type catalog.
+- [[airflow-dag-failure|Airflow DAG Failure]] — the sibling `airflow`-namespace `Sum >= 1` ticket type, but a **different** metric/semantics: `airflow-airflow.<dag>.failed.sum` (a per-DAG task failure keyed on the wrapped script's exit code), not `airflow-alarm_provisioning_failures.sum` (the count of failing alarm keys in the daily provisioning DAG).
 - [[queue-backed-up|Queue backed up]] · [[solr-cpu-high|Solr CPU too high]] — the sibling ticket types.
 - [[../infra/config-get|Reading a config value]] — the `config.get` read that confirms the missing-config root cause, with the broadcast/no-region/no-IAM rules.
 - [[../infra/cloudwatch-cpu-alarm|CloudWatch CPU alarm + EC2 metric access]] — the EC2-CPU alarm shape; this page is the airflow-custom-metric (no-dimension, Sum) variant of the same CloudWatch read pattern.

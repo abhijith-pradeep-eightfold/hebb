@@ -13,6 +13,7 @@ knowledge_required:
   - "[[../../../wiki/repo/codeowners-ownership|CODEOWNERS ownership resolution]]"
 knowledge_optional:
   - "[[../../../wiki/processor/op-registry|op_registry: operation name → source file]]"
+  - "[[../../../wiki/oncall/airflow-dag-failure|Airflow DAG Failure (oncall)]]"
   - "[[../../../wiki/oncall/queue-backed-up|Queue backed up (oncall)]]"
   - "[[../../../wiki/oncall/solr-cpu-high|Solr CPU too high (oncall)]]"
   - "[[../../../wiki/oncall/alarm-provisioning-failures|Alarm Provisioning Failures (oncall)]]"
